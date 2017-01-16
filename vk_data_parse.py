@@ -1,9 +1,5 @@
-import inspect
 import random
 import requests
-import urllib
-import pytumblr
-import vk
 from fake_useragent import UserAgent
 from requests.adapters import HTTPAdapter
 
@@ -16,57 +12,23 @@ class RequestException(Exception):
         super(RequestException, self).__init__(*args, **kwargs)
 
 
-class VkClient(object):
+class DoRequest(object):
+
+    def __init__(self, client, chain):
+        self.client = client
+        self._chain = chain
+
+    def __getattr__(self, item):
+        return type(self)(self.client, self._chain + '.' + item)
+
+    def __call__(self, *args, **kwargs):
+        return self.client._request(api_method=self._chain, *args, **kwargs)
+
+    pass
+
+
+class VKClient(object):
     host = 'https://api.vk.com/method/'
-
-    def __init__(self, token=None, proxy_list=None):
-        self.token = token
-        self.proxy_list = proxy_list
-        self.ua = UserAgent()
-
-    def _send(self):
-        pass
-
-    def _request(self, api_method, api_action, args, request_method, allow_redirects=True, timeout=10, retries=5):
-        session = requests.Session()
-        session.mount('https://', HTTPAdapter(max_retries=retries))
-        session.mount('http://', HTTPAdapter(max_retries=retries))
-        session.headers.update({'User-Agent': self.ua.random})
-        session.proxies.update({'http://': random.choice(self.proxy_list)})
-
-        if self.token:
-            args.update({'access_token': self.token})
-
-        method = getattr(session, request_method)
-        try:
-            rq_kwargs = {}
-            if request_method == 'post':
-                rq_kwargs['data'] = args
-            elif request_method == 'get':
-                rq_kwargs['params'] = args
-
-            data = method(
-                url=self.host + api_method + '.' + api_action,
-                allow_redirects=allow_redirects,
-                timeout=timeout,
-                **rq_kwargs
-            )
-
-            if not data.ok:
-                raise RequestException('Received no 200 status code: ' + str(data.status_code))
-
-            if 'error' in data.text and 'error_msg' in data.text:
-                raise RequestException(data.json()['error']['error_msg'])
-
-        except requests.exceptions.RetryError:
-            print 'Api resets the connection'
-        except requests.exceptions.Timeout:
-            print 'Api do not response'
-        except requests.exceptions.RequestException as e:
-            print e
-
-        return data.json()
-
     VALID_METHODS = (
         'account',
         'apps',
@@ -101,109 +63,57 @@ class VkClient(object):
         'widgets',
     )
 
+    def __init__(self, token=None, proxy_list=None):
+        self.token = token
+        self.proxy_list = proxy_list
+        self.ua = UserAgent()
+
     def __getattr__(self, item):
         if item not in self.VALID_METHODS:
-            raise AttributeError()
+            raise AttributeError('This method does not exist')
 
-        def execute(*args, **kwargs):
-            return self._request(api_method=item,
-                                 *args, **kwargs)
+        return DoRequest(self, item)
 
-        return execute
+    def _request(self, api_method, http_method, allow_redirects=True, timeout=10, retries=5, **kwargs):
+        session = requests.Session()
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+        session.mount('http://', HTTPAdapter(max_retries=retries))
+        session.headers.update({'User-Agent': self.ua.random})
+        session.proxies.update({'http://': random.choice(self.proxy_list)})
 
-    # def account(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def apps(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def audio(self, api_method, request_method, **kwargs):
-    #     return self._request(api_method=api_method, request_method=request_method, args=kwargs)
-    #
-    # def auth(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def board(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def database(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def docs(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def other(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def fave(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def friends(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def gifts(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def groups(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def likes(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def market(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def messages(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def newsfeed(self, api_method, request_method, **kwargs):
-    #     return self._request(api_method=api_method, request_method=request_method, args=kwargs)
-    #
-    # def notes(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def notifications(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def pages(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def photos(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def places(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def polls(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def search(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def stats(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def status(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def storage(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def users(self, api_method, request_method, **kwargs):
-    #     return self._request(api_method=api_method, request_method=request_method, args=kwargs)
-    #
-    # def utils(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def video(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
-    #
-    # def wall(self, api_method, request_method, **kwargs):
-    #     return self._request(api_method=api_method, request_method=request_method, args=kwargs)
-    #
-    # def widgets(self, api_method, **kwargs):
-    #     return self._request(api_method, kwargs)
+        if self.token:
+            kwargs.update({'access_token': self.token})
 
+        method = getattr(session, http_method)
+
+        try:
+            rq_kwargs = {}
+            if http_method == 'post':
+                rq_kwargs['data'] = kwargs
+            elif http_method == 'get':
+                rq_kwargs['params'] = kwargs
+
+            data = method(
+                url=self.host + api_method,
+                allow_redirects=allow_redirects,
+                timeout=timeout,
+                **rq_kwargs
+            )
+
+            if not data.ok:
+                raise RequestException('Received no 200 status code: ' + str(data.status_code))
+
+            if 'error' in data.text and 'error_msg' in data.text:
+                raise RequestException(data.json()['error']['error_msg'])
+
+        except requests.exceptions.RetryError:
+            print 'Api resets the connection'
+        except requests.exceptions.Timeout:
+            print 'Api do not response'
+        except requests.exceptions.RequestException as e:
+            print e
+
+        return data.json() if hasattr(data, 'json') else data
 
 proxy_list = ['36.81.184.111:80',
               '70.248.28.23:800',
@@ -286,23 +196,16 @@ proxy_list = ['36.81.184.111:80',
               '37.72.185.43:1080',
               '37.29.83.212:8080']
 
-# session.mount(HTTPAdapter(max_retries=5))
 # client = VkClient(proxy_list=proxy_list, )
-client = VkClient(proxy_list=proxy_list,
-                  token='40d31b3c7c18ef58888d070e6ff28bf26efddedd2ca08d4db9295d685167de9638f387d15a9d1e42f64ed',
+client = VKClient(proxy_list=proxy_list,
+                  token='1aef5944c4ecc55630c21f9719e9c71fbae461c019926b1badd836aade794c7ee8620373f6277cde55a10',
                   )
 
+res = client.newsfeed.search(http_method='post', owner_id=1584512, q='sun', start_time=1286668800, end_time=1296668800, count=100, start_from='222', v='5.62')
 
-print client.newsfeed(request_method='post',
-                      api_action='search',
-                      args={'owner_id':1584512,
-                      'q':'cats',
-                      'start_time':1286668800,
-                      'count':100}).get('response')
-
-
-
-# http://vk.api.com/methods/newsfeed.search?param=sadfasdas&
+for r in res.get('response') if res.get('response') == list else (res['response']['items']):
+    print r
+print res['response']['next_from']
 
 
 
