@@ -21,7 +21,7 @@ class DoRequest(object):
         return type(self)(self.client, self._chain + '.' + item)
 
     def __call__(self, *args, **kwargs):
-        return self.client._request.send(api_method=self._chain, *args, **kwargs)
+        return self.client.get_data_range(api_method=self._chain, *args, **kwargs)
 
 
 class ClientRequest(object):
@@ -127,6 +127,19 @@ class VKClient(object):
 
         return DoRequest(self, item)
 
+    def get_data_range(self, api_method, *args, **kwargs):
+        start_item = kwargs.get('start_page', '1')
+        while True:
+            kwargs['start_from'] = start_item
+            data = self._request.send(api_method=api_method, *args, **kwargs)
+            start_item = data.get('response').get('next_from')
+            if isinstance(data.get('response'), list):
+                items = data.get('response')
+            else:
+                items = data.get('response').get('items')
+            yield items
+            if not start_item:
+                raise StopIteration()
 
 proxy_list = ['36.81.184.111:80',
               '70.248.28.23:800',
@@ -209,80 +222,13 @@ proxy_list = ['36.81.184.111:80',
               '37.72.185.43:1080',
               '37.29.83.212:8080']
 
-# client = VKClient(proxy_list=proxy_list, )
 client = VKClient(proxy_list=proxy_list,
                   token='2bf85846cadb59da0b8f36cf7fef3d19b2fd469edd9bebe45643238c50fad568d1f2a496c9d8f1de602f7',
                   )
 
-
-def get_vk_data(client, result=list(), **kwargs):
-    while True:
-        data = client.newsfeed.search(**kwargs)
-        for r in data.get('response') if isinstance(data.get('response'), list) else (data['response']['items']):
-            result.append(r)
-        next_page = data.get('response').get('next_from')
-        kwargs['start_from'] = next_page
-        if not next_page:
-            return result
-
-
-res = get_vk_data(client, http_method='post', owner_id=1584512, q='space', count=100, v='5.62')
-print len(res)
-
-# class VKData(object):
-#     def __init__(self, access_token=None):
-#         self.access_token = access_token
-#
-#         self.client = VkClient(access_token)
-#
-#     def from_query(self, query, **kwargs):
-#         try:
-#             response = self.client.newsfeed(method='search', q=query)
-#         except Exception:
-#             pass
-#         api_link = 'https://api.vk.com/method/newsfeed.search?q={}'.format(query)
-#
-#         if kwargs:
-#             for arg, value in kwargs.items():
-#                 api_link += "&" + arg + "=" + str(value)
-#         api_link += '&' + self.access_token if self.access_token else ''
-#         data = requests.request('get', api_link)
-#         return json.loads(data.text).get('response')
-#
-#     def from_page(self, user_id, **kwargs):
-#         api_link = 'https://api.vk.com/method/wall.get?{0}={1}'.format('owner_id' if type(user_id) == int else 'domain',
-#                                                                        user_id)
-#
-#         if kwargs:
-#             for arg, value in kwargs.items():
-#                 api_link += "&" + arg + "=" + str(value)
-#         api_link += '&' + self.access_token if self.access_token else ''
-#         data = requests.request('get', api_link)
-#         yield json.loads(data.text).get('response')
-#
-#     def update_posts(self, posts, **kwargs):
-#         api_link = 'https://api.vk.com/method/wall.getById?posts='
-#
-#         if type(posts) == str:
-#             api_link += posts
-#         else:
-#             api_link += ','.join([post for post in posts])
-#
-#         if kwargs:
-#             for arg, value in kwargs.items():
-#                 api_link += "&" + arg + "=" + str(value)
-#         data = requests.request('get', api_link)
-#         api_link += '&' + self.access_token if self.access_token else ''
-#         return json.loads(data.text).get('response')
-#
-#     def update_user(self, user_id, fields=None, **kwargs):
-#         api_link = 'https://api.vk.com/method/users.get?user_ids={}'.format(user_id)
-#
-#         if fields:
-#             api_link += '&fields=' + ','.join([field for field in fields])
-#         if kwargs:
-#             for arg, value in kwargs.items():
-#                 api_link += "&" + arg + "=" + str(value)
-#         data = requests.request('get', api_link)
-#         api_link += '&' + self.access_token if self.access_token else ''
-#         return json.loads(data.text).get('response')
+res = client.newsfeed.search(http_method='post', q='street', count=100, v='5.62')
+results = []
+for i in res:  # res - generator
+    for y in i:
+        results.append(i)
+print len(results)
