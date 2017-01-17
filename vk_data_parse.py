@@ -13,7 +13,6 @@ class RequestException(Exception):
 
 
 class DoRequest(object):
-
     def __init__(self, client, chain):
         self.client = client
         self._chain = chain
@@ -22,13 +21,65 @@ class DoRequest(object):
         return type(self)(self.client, self._chain + '.' + item)
 
     def __call__(self, *args, **kwargs):
-        return self.client._request(api_method=self._chain, *args, **kwargs)
+        return self.client._request.send(api_method=self._chain, *args, **kwargs)
 
-    pass
+
+class ClientRequest(object):
+    host = 'https://api.vk.com/method/'
+
+    def __init__(self, token=None, proxy_list=None):
+        self._token = token
+        self._proxy_list = proxy_list
+        self._user_agent = UserAgent()
+
+    def _get_proxy(self, proxy=None):
+        if proxy:
+            return proxy
+        elif self._proxy_list:
+            return random.choice(self._proxy_list)
+        return ''
+
+    def _build_session(self, retries=5, proxy=None):
+        proxy_url = self._get_proxy(proxy)
+
+        session = requests.Session()
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+        session.mount('http://', HTTPAdapter(max_retries=retries))
+        session.headers.update({'User-Agent': self._user_agent.random})
+        session.proxies.update({'http://': proxy_url})
+
+        return session
+
+    def send(self, api_method, http_method, retries=5, timeout=10, allow_redirects=True, proxy=None, **kwargs):
+        session = self._build_session(retries=retries, proxy=proxy)
+        method = getattr(session, http_method)
+
+        rq_kwargs = {}
+        if http_method == 'post':
+            rq_kwargs['data'] = kwargs
+        elif http_method == 'get':
+            rq_kwargs['params'] = kwargs
+
+        data = method(
+            url=self.host + api_method,
+            allow_redirects=allow_redirects,
+            timeout=timeout,
+            **rq_kwargs
+        )
+
+        if not data.ok:
+            raise RequestException('Received no 200 status code: ' + str(data.status_code))
+
+        data_dict = data.json()
+
+        if 'error' in data_dict and 'error_msg' in data_dict['error']:
+            raise RequestException(data_dict['error']['error_msg'])
+
+        return data.json() if hasattr(data, 'json') else data
 
 
 class VKClient(object):
-    host = 'https://api.vk.com/method/'
+
     VALID_METHODS = (
         'account',
         'apps',
@@ -65,8 +116,10 @@ class VKClient(object):
 
     def __init__(self, token=None, proxy_list=None):
         self.token = token
-        self.proxy_list = proxy_list
-        self.ua = UserAgent()
+        self._request = ClientRequest(
+            token=token,
+            proxy_list=proxy_list,
+        )
 
     def __getattr__(self, item):
         if item not in self.VALID_METHODS:
@@ -74,46 +127,6 @@ class VKClient(object):
 
         return DoRequest(self, item)
 
-    def _request(self, api_method, http_method, allow_redirects=True, timeout=10, retries=5, **kwargs):
-        session = requests.Session()
-        session.mount('https://', HTTPAdapter(max_retries=retries))
-        session.mount('http://', HTTPAdapter(max_retries=retries))
-        session.headers.update({'User-Agent': self.ua.random})
-        session.proxies.update({'http://': random.choice(self.proxy_list)})
-
-        if self.token:
-            kwargs.update({'access_token': self.token})
-
-        method = getattr(session, http_method)
-
-        try:
-            rq_kwargs = {}
-            if http_method == 'post':
-                rq_kwargs['data'] = kwargs
-            elif http_method == 'get':
-                rq_kwargs['params'] = kwargs
-
-            data = method(
-                url=self.host + api_method,
-                allow_redirects=allow_redirects,
-                timeout=timeout,
-                **rq_kwargs
-            )
-
-            if not data.ok:
-                raise RequestException('Received no 200 status code: ' + str(data.status_code))
-
-            if 'error' in data.text and 'error_msg' in data.text:
-                raise RequestException(data.json()['error']['error_msg'])
-
-        except requests.exceptions.RetryError:
-            print 'Api resets the connection'
-        except requests.exceptions.Timeout:
-            print 'Api do not response'
-        except requests.exceptions.RequestException as e:
-            print e
-
-        return data.json() if hasattr(data, 'json') else data
 
 proxy_list = ['36.81.184.111:80',
               '70.248.28.23:800',
@@ -196,18 +209,23 @@ proxy_list = ['36.81.184.111:80',
               '37.72.185.43:1080',
               '37.29.83.212:8080']
 
-# client = VkClient(proxy_list=proxy_list, )
-client = VKClient(proxy_list=proxy_list,
-                  token='1aef5944c4ecc55630c21f9719e9c71fbae461c019926b1badd836aade794c7ee8620373f6277cde55a10',
-                  )
-
-res = client.newsfeed.search(http_method='post', owner_id=1584512, q='sun', start_time=1286668800, end_time=1296668800, count=100, start_from='222', v='5.62')
-
-for r in res.get('response') if res.get('response') == list else (res['response']['items']):
-    print r
-print res['response']['next_from']
+client = VKClient(proxy_list=proxy_list, )
+# client = VKClient(
+#                   token='2bf85846cadb59da0b8f36cf7fef3d19b2fd469edd9bebe45643238c50fad568d1f2a496c9d8f1de602f7',
+#                   )
 
 
+def get_vk_data(client, result=list(), start_item=1, **kwargs):
+    kwargs['start_from'] = start_item
+    data = client.newsfeed.search(**kwargs)
+    for r in data.get('response') if isinstance(data.get('response'), list) else (data['response']['items']):
+        result.append(r)
+    if data.get('response').get('next_from'):
+        get_vk_data(client, start_item=data.get('response').get('next_from'), **kwargs)
+    return result
+
+res = get_vk_data(client, http_method='post', owner_id=1584512, q='cats', count=100, v='5.62')
+print len(res)
 
 # class VKData(object):
 #     def __init__(self, access_token=None):
@@ -266,4 +284,3 @@ print res['response']['next_from']
 #         data = requests.request('get', api_link)
 #         api_link += '&' + self.access_token if self.access_token else ''
 #         return json.loads(data.text).get('response')
-
