@@ -5,11 +5,7 @@ from requests.adapters import HTTPAdapter
 
 
 class RequestException(Exception):
-    status = 0
-    error = ''
-
-    def __init__(self, *args, **kwargs):
-        super(RequestException, self).__init__(*args, **kwargs)
+    pass
 
 
 class DoRequest(object):
@@ -21,23 +17,17 @@ class DoRequest(object):
         return type(self)(self.client, self._chain + '.' + item)
 
     def __call__(self, *args, **kwargs):
-        return self.client.get_data_range(api_method=self._chain, *args, **kwargs)
+        return self.client._request.send(api_method=self._chain, *args, **kwargs)
 
 
 class ClientRequest(object):
-    host = 'https://api.vk.com/method/'
+    host = 'https://api.vk.com'
 
-    def __init__(self, token=None, proxy_list=None):
+    def __init__(self, token=None, proxy_list=None, api_version=None):
         self._token = token
         self._proxy_list = proxy_list
         self._user_agent = UserAgent()
-
-    def _get_proxy(self, proxy=None):
-        if proxy:
-            return proxy
-        elif self._proxy_list:
-            return random.choice(self._proxy_list)
-        return ''
+        self.version = api_version
 
     def _build_session(self, retries=5, proxy=None):
         proxy_url = self._get_proxy(proxy)
@@ -50,7 +40,11 @@ class ClientRequest(object):
 
         return session
 
-    def send(self, api_method, http_method, retries=5, timeout=10, allow_redirects=True, proxy=None, **kwargs):
+    def send(self, api_method, http_method='get', retries=5, timeout=10, allow_redirects=True, proxy=None, **kwargs):
+
+        if 'v' not in kwargs:
+            kwargs['v'] = self.version
+
         session = self._build_session(retries=retries, proxy=proxy)
         method = getattr(session, http_method)
 
@@ -59,9 +53,11 @@ class ClientRequest(object):
             rq_kwargs['data'] = kwargs
         elif http_method == 'get':
             rq_kwargs['params'] = kwargs
+        else:
+            raise ValueError('HTTP method not allowed')
 
         data = method(
-            url=self.host + api_method,
+            url=self._build_url(method=api_method),
             allow_redirects=allow_redirects,
             timeout=timeout,
             **rq_kwargs
@@ -75,10 +71,29 @@ class ClientRequest(object):
         if 'error' in data_dict and 'error_msg' in data_dict['error']:
             raise RequestException(data_dict['error']['error_msg'])
 
-        return data_dict
+        def reformat(response):
+            data = response.get('response', {})
+            if not isinstance(data, list):
+                items = data.get('items')
+                next_page = data.get('next_from')
+                return {'next_from': next_page, 'items': items}
+            return {'next_from': None, 'items': data}
+
+        return reformat(response=data_dict)
+
+    def _get_proxy(self, proxy=None):
+        if proxy:
+            return proxy
+        elif self._proxy_list:
+            return random.choice(self._proxy_list)
+
+    def _build_url(self, method):
+        params = [self.host, 'method', method]
+        return '/'.join(params)
 
 
 class VKClient(object):
+    version = '5.62'
 
     VALID_METHODS = (
         'account',
@@ -114,9 +129,10 @@ class VKClient(object):
         'widgets',
     )
 
-    def __init__(self, token=None, proxy_list=None):
+    def __init__(self, token=None, proxy_list=None, version=version):
         self.token = token
         self._request = ClientRequest(
+            api_version=version,
             token=token,
             proxy_list=proxy_list,
         )
@@ -127,19 +143,46 @@ class VKClient(object):
 
         return DoRequest(self, item)
 
-    def get_data_range(self, api_method, *args, **kwargs):
+    # def get_data_range(self, api_method, *args, **kwargs):
+    #     start_item = kwargs.get('start_page', '1')
+    #     while True:
+    #         kwargs['start_from'] = start_item
+    #         data = self._request.send(api_method=api_method, *args, **kwargs)
+    #         start_item = data.get('response').get('next_from')
+    #         if isinstance(data.get('response'), list):
+    #             items = data.get('response')
+    #         else:
+    #             items = data.get('response').get('items')
+    #         yield items
+    #         if not start_item:
+    #             raise StopIteration()
+
+    def pagination(self, methods, start_time=None, end_time=None, limit=None, count=100, **kwargs):
         start_item = kwargs.get('start_page', '1')
+        iteration = 0
         while True:
+            method, sub_method = methods
+
+            method_obj = getattr(self, method)
+            sub_method_obj = getattr(method_obj, sub_method)
+
             kwargs['start_from'] = start_item
-            data = self._request.send(api_method=api_method, *args, **kwargs)
-            start_item = data.get('response').get('next_from')
-            if isinstance(data.get('response'), list):
-                items = data.get('response')
-            else:
-                items = data.get('response').get('items')
-            yield items
-            if not start_item:
-                raise StopIteration()
+            kwargs['count'] = count
+            if start_time:
+                kwargs['start_time'] = start_time
+            if end_time:
+                kwargs['end_time'] = end_time
+
+            data = sub_method_obj(**kwargs)
+
+            start_item = data.get('next_from')
+
+            if not start_item or limit and iteration >= limit:
+                raise StopIteration
+
+            iteration += 1
+            yield data
+
 
 proxy_list = ['36.81.184.111:80',
               '70.248.28.23:800',
@@ -223,12 +266,13 @@ proxy_list = ['36.81.184.111:80',
               '37.29.83.212:8080']
 
 client = VKClient(proxy_list=proxy_list,
-                  token='2bf85846cadb59da0b8f36cf7fef3d19b2fd469edd9bebe45643238c50fad568d1f2a496c9d8f1de602f7',
+                  # token='2bf85846cadb59da0b8f36cf7fef3d19b2fd469edd9bebe45643238c50fad568d1f2a496c9d8f1de602f7',
                   )
 
-res = client.newsfeed.search(http_method='post', q='street', count=100, v='5.62')
-results = []
-for i in res:  # res - generator
-    for y in i:
-        results.append(i)
-print len(results)
+# res = client.newsfeed.search(http_method='post', q='wawe', count=100)
+
+# print len(res)
+
+test = client.pagination(('newsfeed', 'search'), q='city')
+
+print len(list(test))
