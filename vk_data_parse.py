@@ -75,7 +75,7 @@ class ClientRequest(object):
         if 'error' in data_dict and 'error_msg' in data_dict['error']:
             raise RequestException(data_dict['error']['error_msg'])
 
-        return data.json() if hasattr(data, 'json') else data
+        return data_dict
 
 
 class VKClient(object):
@@ -209,22 +209,24 @@ proxy_list = ['36.81.184.111:80',
               '37.72.185.43:1080',
               '37.29.83.212:8080']
 
-client = VKClient(proxy_list=proxy_list, )
-# client = VKClient(
-#                   token='2bf85846cadb59da0b8f36cf7fef3d19b2fd469edd9bebe45643238c50fad568d1f2a496c9d8f1de602f7',
-#                   )
+# client = VKClient(proxy_list=proxy_list, )
+client = VKClient(proxy_list=proxy_list,
+                  token='2bf85846cadb59da0b8f36cf7fef3d19b2fd469edd9bebe45643238c50fad568d1f2a496c9d8f1de602f7',
+                  )
 
 
-def get_vk_data(client, result=list(), start_item=1, **kwargs):
-    kwargs['start_from'] = start_item
-    data = client.newsfeed.search(**kwargs)
-    for r in data.get('response') if isinstance(data.get('response'), list) else (data['response']['items']):
-        result.append(r)
-    if data.get('response').get('next_from'):
-        get_vk_data(client, start_item=data.get('response').get('next_from'), **kwargs)
-    return result
+def get_vk_data(client, result=list(), **kwargs):
+    while True:
+        data = client.newsfeed.search(**kwargs)
+        for r in data.get('response') if isinstance(data.get('response'), list) else (data['response']['items']):
+            result.append(r)
+        next_page = data.get('response').get('next_from')
+        kwargs['start_from'] = next_page
+        if not next_page:
+            return result
 
-res = get_vk_data(client, http_method='post', owner_id=1584512, q='cats', count=100, v='5.62')
+
+res = get_vk_data(client, http_method='post', owner_id=1584512, q='space', count=100, v='5.62')
 print len(res)
 
 # class VKData(object):
