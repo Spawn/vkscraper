@@ -1,5 +1,9 @@
+from pprint import pprint
+
 from client import VKClient
 from client import proxy_list
+import gevent
+from gevent import monkey
 
 
 class VKData(object):
@@ -64,6 +68,9 @@ class VKData(object):
         return data
 
 a = VKData()
-data = a.update_author()
-for item in data['items']:
-    print item
+
+func_list = [a.from_query, a.from_page, a.update_posts, a.update_author]
+
+monkey.patch_all()
+jobs = [gevent.spawn(func) for func in func_list]
+pprint([res.get() for res in gevent.joinall(jobs)])

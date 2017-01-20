@@ -1,6 +1,10 @@
 import random
+from pprint import pprint
+
+import gevent
 import requests
 from fake_useragent import UserAgent
+from gevent import monkey
 from requests.adapters import HTTPAdapter
 
 
@@ -73,15 +77,15 @@ class ClientRequest(object):
         if 'error' in data_dict and 'error_msg' in data_dict['error']:
             raise RequestException(data_dict['error']['error_msg'])
 
-        def reformat(response):
-            data = response.get('response', {})
-            if not isinstance(data, list):
-                items = data.get('items')
-                next_page = data.get('next_from')
-                return {'next_from': next_page, 'items': items}
-            return {'next_from': None, 'items': data}
+        # def reformat(response):
+        #     data = response.get('response', {})
+        #     if not isinstance(data, list):
+        #         items = data.get('items')
+        #         next_page = data.get('next_from')
+        #         return {'next_from': next_page, 'items': items}
+        #     return {'next_from': None, 'items': data}
 
-        return reformat(response=data_dict)
+        return data_dict
 
     def _get_proxy(self, proxy=None):
         if proxy:
@@ -145,20 +149,6 @@ class VKClient(object):
 
         return DoRequest(self, item)
 
-    # def get_data_range(self, api_method, *args, **kwargs):
-    #     start_item = kwargs.get('start_page', '1')
-    #     while True:
-    #         kwargs['start_from'] = start_item
-    #         data = self._request.send(api_method=api_method, *args, **kwargs)
-    #         start_item = data.get('response').get('next_from')
-    #         if isinstance(data.get('response'), list):
-    #             items = data.get('response')
-    #         else:
-    #             items = data.get('response').get('items')
-    #         yield items
-    #         if not start_item:
-    #             raise StopIteration()
-
     def pagination(self, methods, start_time=None, end_time=None, limit=None, count=100, **kwargs):
         start_item = kwargs.get('start_page', '1')
         iteration = 0
@@ -175,7 +165,7 @@ class VKClient(object):
             if end_time:
                 kwargs['end_time'] = end_time
 
-            data = sub_method_obj(**kwargs)
+            data = sub_method_obj(kwargs=kwargs)
 
             start_item = data.get('next_from')
             yield data
@@ -185,6 +175,32 @@ class VKClient(object):
 
             iteration += 1
 
+    def async_pagination(self, methods, start_time=None, end_time=None, limit=None, count=100, **kwargs):
+        start_item = kwargs.get('start_page', '1')
+        pages_quantity = ['']
+        method, sub_method = methods
+
+        method_obj = getattr(self, method)
+        sub_method_obj = getattr(method_obj, sub_method)
+
+        kwargs['start_from'] = start_item
+        kwargs['count'] = count
+        if start_time:
+            kwargs['start_time'] = start_time
+        if end_time:
+            kwargs['end_time'] = end_time
+
+        def get_first():
+            data = sub_method_obj(**kwargs)
+
+            pages_quantity[0] = int(data['response']['total_count'] / count)
+            return data
+
+        yield get_first()
+        if int(pages_quantity[0]) > 1:
+            monkey.patch_all()
+            jobs = [gevent.spawn(sub_method_obj, kwargs=kwargs.update({'start_from': page + count})) for page in xrange(int(pages_quantity[0]))]
+            yield [res.get() for res in gevent.joinall(jobs)]
 
 proxy_list = ['94.181.119.66:8080',
               '36.84.12.224:80',
@@ -346,34 +362,13 @@ proxy_list = ['94.181.119.66:8080',
               '85.194.75.18:8080',
               '183.89.144.176:8080',
               '187.69.9.117:8080']
-# l = []
-#
-# client = VKClient(
-#     proxy_list=proxy_list,
-#     token='2d81c89832f2226c7b848eb0306b3a1219096a1faef6ab9969e99bd9bd5b640c2617edb6d2b165ac05533',
-# )
-#
-# client.wall.post(owner_id=15723625, message='hello from api!1!!!!1')
-# for x in xrange(111):
-#     res = client.newsfeed.search(q='wawe')
-#     print x
-#     l.append(res['items'])
-#     if not res['items']:
-#         exit()
-# print len(l)
-#
+
+client = VKClient(
+    proxy_list=proxy_list,
+    # token='2d81c89832f2226c7b848eb0306b3a1219096a1faef6ab9969e99bd9bd5b640c2617edb6d2b165ac05533',
+)
 
 
-
-
-
-# for x in xrange(111):
-#     test = client.pagination(('newsfeed', 'search'), q='car')
-#     for i in test:
-#         if not i['items']:
-#             print x
-#             print len(l)
-#             exit()
-#         for y in i['items']:
-#             l.append(y)
-#             print y
+test = client.async_pagination(('newsfeed', 'search'), q='azazazaz')
+for item in test:
+    pprint(item)
