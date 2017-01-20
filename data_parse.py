@@ -18,14 +18,14 @@ class VKData(object):
             'count': 40,
             'start_time': 1483056000,
             'end_time': 1484697600,
-            'access_token': '434c78c2a0357b058d84e1390dbf32d59e0b2adc7ec8efd3ee0a8d400b309271858c28c4184746fbc83c6',
+            'access_token': '2d81c89832f2226c7b848eb0306b3a1219096a1faef6ab9969e99bd9bd5b640c2617edb6d2b165ac05533',
         }
         self.client = VKClient(token=self.parameters['access_token'], proxy_list=self.proxy_list)
 
     def init_client_from_page(self):
         self.parameters = {
             'owner_id': 15723625,
-            'access_token': '434c78c2a0357b058d84e1390dbf32d59e0b2adc7ec8efd3ee0a8d400b309271858c28c4184746fbc83c6',
+            'access_token': '2d81c89832f2226c7b848eb0306b3a1219096a1faef6ab9969e99bd9bd5b640c2617edb6d2b165ac05533',
         }
         self.client = VKClient(token=self.parameters['access_token'], proxy_list=self.proxy_list)
 
@@ -35,15 +35,15 @@ class VKData(object):
             15723625_5796,15723625_5795,15723625_5794,15723625_5793, 15723625_5792,15723625_5791,\
             15723625_5790,15723625_5789,15723625_5788,15723625_5787,15723625_5786,15723625_5784,\
             15723625_5783,15723625_5782,15723625_5779',
-            'access_token': '434c78c2a0357b058d84e1390dbf32d59e0b2adc7ec8efd3ee0a8d400b309271858c28c4184746fbc83c6',
+            'access_token': '',
         }
         self.client = VKClient(token=self.parameters['access_token'], proxy_list=self.proxy_list)
 
     def init_client_update_authors(self):
         self.parameters = {
-            'user_ids': 'aqustics',
+            'user_ids': 'aqustics, katya_fofina',
             'fields': 'counters, photo_id',
-            'access_token': '434c78c2a0357b058d84e1390dbf32d59e0b2adc7ec8efd3ee0a8d400b309271858c28c4184746fbc83c6',
+            'access_token': '2d81c89832f2226c7b848eb0306b3a1219096a1faef6ab9969e99bd9bd5b640c2617edb6d2b165ac05533',
         }
         self.client = VKClient(token=self.parameters['access_token'], proxy_list=self.proxy_list)
 
@@ -58,19 +58,27 @@ class VKData(object):
         return data
 
     def update_posts(self):
+        jobs = []
         self.init_client_update_posts()
-        data = self.client.wall.getById(**self.parameters)
-        return data
+        posts = self.parameters['posts'].split(',')
+        monkey.patch_all()
+        for post in posts:
+            self.parameters.update({'posts': post})
+            jobs.append(gevent.spawn(self.client.wall.getById, **self.parameters))
+            yield [res.get() for res in gevent.joinall(jobs)]
 
     def update_author(self):
+        jobs = []
         self.init_client_update_authors()
-        data = self.client.users.get(**self.parameters)
-        return data
+        users = self.parameters['user_ids'].split(',')
+        monkey.patch_all()
+        for user in users:
+            self.parameters.update({'user_ids': user})
+            jobs.append(gevent.spawn(self.client.users.get, **self.parameters))
+        # jobs = [gevent.spawn(self.client.users.get, self.parameters.update({'user_ids': user})) for user in users]
+        yield [res.get() for res in gevent.joinall(jobs)]
 
 a = VKData()
-
-func_list = [a.from_query, a.from_page, a.update_posts, a.update_author]
-
-monkey.patch_all()
-jobs = [gevent.spawn(func) for func in func_list]
-pprint([res.get() for res in gevent.joinall(jobs)])
+res = a.update_posts()
+for item in res:
+    pprint(item)
