@@ -4,6 +4,23 @@ from client import VKClient
 from client import proxy_list
 import gevent
 from gevent import monkey
+monkey.patch_all()
+
+
+class AsyncRequests(object):
+
+    def __init__(self, client, parameters, param_key):
+        self.jobs_pull = []
+        self.client = client
+        self.parameters = parameters
+        self.param_key = param_key
+
+    def execute_jobs(self):
+        items = self.parameters[self.param_key].split(',')
+        for item in items:
+            self.parameters[self.param_key] = item
+            self.jobs_pull.append(gevent.spawn(self.client, **self.parameters))
+        yield [result.get() for result in gevent.joinall(self.jobs_pull)]
 
 
 class VKData(object):
@@ -58,27 +75,17 @@ class VKData(object):
         return data
 
     def update_posts(self):
-        jobs = []
         self.init_client_update_posts()
-        posts = self.parameters['posts'].split(',')
-        monkey.patch_all()
-        for post in posts:
-            self.parameters.update({'posts': post})
-            jobs.append(gevent.spawn(self.client.wall.getById, **self.parameters))
-            yield [res.get() for res in gevent.joinall(jobs)]
+        async_requests = AsyncRequests(self.client.wall.getById, self.parameters, 'posts')
+        return async_requests.execute_jobs()
 
     def update_author(self):
-        jobs = []
         self.init_client_update_authors()
-        users = self.parameters['user_ids'].split(',')
-        monkey.patch_all()
-        for user in users:
-            self.parameters.update({'user_ids': user})
-            jobs.append(gevent.spawn(self.client.users.get, **self.parameters))
-        # jobs = [gevent.spawn(self.client.users.get, self.parameters.update({'user_ids': user})) for user in users]
-        yield [res.get() for res in gevent.joinall(jobs)]
+        async_requests = AsyncRequests(self.client.users.get, self.parameters, 'user_ids')
+        return async_requests.execute_jobs()
+
 
 a = VKData()
-res = a.update_posts()
+res = a.update_author()
 for item in res:
     pprint(item)
