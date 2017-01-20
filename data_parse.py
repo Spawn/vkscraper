@@ -25,6 +25,9 @@ class VKData(object):
         self.client = None
         self.proxy_list = proxy_list
 
+    def prepare_data(self, async, method, param_key):
+        pass
+
     def init_client_from_query(self):
         self.parameters = {
             'q': 'cat',
@@ -83,10 +86,13 @@ class VKData(object):
         self.init_client_update_authors()
         users = self.parameters['user_ids'].split(',')
         async_requests = AsyncRequests()
+        self.prepare_data(param_key='user_ids', async=async_requests, method=self.client.users.get)
         for user in users:
             self.parameters.update({'user_ids': user})
             async_requests.add_job(gevent.spawn(self.client.users.get, **self.parameters))
         return async_requests.join_jobs()
+
+# todo timeout for greenlet
 
 
 a = VKData()
