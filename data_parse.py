@@ -9,17 +9,13 @@ monkey.patch_all()
 
 class AsyncRequests(object):
 
-    def __init__(self, client, parameters, param_key):
+    def __init__(self):
         self.jobs_pull = []
-        self.client = client
-        self.parameters = parameters
-        self.param_key = param_key
 
-    def execute_jobs(self):
-        items = self.parameters[self.param_key].split(',')
-        for item in items:
-            self.parameters[self.param_key] = item
-            self.jobs_pull.append(gevent.spawn(self.client, **self.parameters))
+    def add_job(self, job):
+        self.jobs_pull.append(job)
+
+    def join_jobs(self):
         yield [result.get() for result in gevent.joinall(self.jobs_pull)]
 
 
@@ -76,16 +72,24 @@ class VKData(object):
 
     def update_posts(self):
         self.init_client_update_posts()
-        async_requests = AsyncRequests(self.client.wall.getById, self.parameters, 'posts')
-        return async_requests.execute_jobs()
+        posts = self.parameters['posts'].split(',')
+        async_requests = AsyncRequests()
+        for post in posts:
+            self.parameters.update({'posts': post})
+            async_requests.add_job(gevent.spawn(self.client.wall.getById, **self.parameters))
+        return async_requests.join_jobs()
 
     def update_author(self):
         self.init_client_update_authors()
-        async_requests = AsyncRequests(self.client.users.get, self.parameters, 'user_ids')
-        return async_requests.execute_jobs()
+        users = self.parameters['user_ids'].split(',')
+        async_requests = AsyncRequests()
+        for user in users:
+            self.parameters.update({'user_ids': user})
+            async_requests.add_job(gevent.spawn(self.client.users.get, **self.parameters))
+        return async_requests.join_jobs()
 
 
 a = VKData()
-res = a.update_author()
+res = a.update_posts()
 for item in res:
     pprint(item)
