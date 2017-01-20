@@ -194,12 +194,13 @@ class VKClient(object):
             data = sub_method_obj(**kwargs)
 
             pages_quantity[0] = int(data['response']['total_count'] / count)
+            kwargs['start_from'] = count + 1
             return data
 
         yield get_first()
         if int(pages_quantity[0]) > 1:
             monkey.patch_all()
-            jobs = [gevent.spawn(sub_method_obj, kwargs=kwargs.update({'start_from': page + count})) for page in xrange(int(pages_quantity[0]))]
+            jobs = [gevent.spawn(sub_method_obj, kwargs=kwargs.update({'start_from': (count * page) + 1})) for page in xrange(int(pages_quantity[0]))]
             yield [res.get() for res in gevent.joinall(jobs)]
 
 proxy_list = ['94.181.119.66:8080',
@@ -369,6 +370,6 @@ client = VKClient(
 )
 
 
-test = client.async_pagination(('newsfeed', 'search'), q='azazazaz')
+test = client.async_pagination(('newsfeed', 'search'), q='kekekek')
 for item in test:
     pprint(item)
