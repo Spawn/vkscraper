@@ -16,7 +16,7 @@ class AsyncRequests(object):
         self.jobs_pull.append(job)
 
     def join_jobs(self):
-        yield [result.get() for result in gevent.joinall(self.jobs_pull)]
+        yield [result.get() for result in gevent.joinall(self.jobs_pull, timeout=4)]
 
 
 class VKData(object):
@@ -25,8 +25,13 @@ class VKData(object):
         self.client = None
         self.proxy_list = proxy_list
 
-    def prepare_data(self, async, method, param_key):
-        pass
+    def prepare_data(self, method, param_key):
+        async_requests = AsyncRequests()
+        users = self.parameters[param_key].split(',')
+        for user in users:
+            self.parameters.update({param_key: user})
+            async_requests.add_job(gevent.spawn(method, **self.parameters))
+        return async_requests.join_jobs()
 
     def init_client_from_query(self):
         self.parameters = {
@@ -75,24 +80,11 @@ class VKData(object):
 
     def update_posts(self):
         self.init_client_update_posts()
-        posts = self.parameters['posts'].split(',')
-        async_requests = AsyncRequests()
-        for post in posts:
-            self.parameters.update({'posts': post})
-            async_requests.add_job(gevent.spawn(self.client.wall.getById, **self.parameters))
-        return async_requests.join_jobs()
+        return self.prepare_data(param_key='posts', method=self.client.wall.getById)
 
     def update_author(self):
         self.init_client_update_authors()
-        users = self.parameters['user_ids'].split(',')
-        async_requests = AsyncRequests()
-        self.prepare_data(param_key='user_ids', async=async_requests, method=self.client.users.get)
-        for user in users:
-            self.parameters.update({'user_ids': user})
-            async_requests.add_job(gevent.spawn(self.client.users.get, **self.parameters))
-        return async_requests.join_jobs()
-
-# todo timeout for greenlet
+        return self.prepare_data(param_key='user_ids', method=self.client.users.get)
 
 
 a = VKData()
