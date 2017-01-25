@@ -1,7 +1,7 @@
 from pprint import pprint
 
 from client import VKClient
-from client import proxy_list
+from client import proxy_list as default_proxy_list
 import gevent
 from gevent import monkey
 monkey.patch_all()
@@ -16,20 +16,21 @@ class AsyncRequests(object):
         self.jobs_pull.append(job)
 
     def join_jobs(self):
-        yield [result.get() for result in gevent.joinall(self.jobs_pull, timeout=4)]
+        for result in gevent.joinall(self.jobs_pull, timeout=4):
+            yield result.get()
 
 
 class VKData(object):
-    def __init__(self):
+    def __init__(self, proxy_list=None):
+        self.proxy_list = proxy_list if proxy_list else default_proxy_list
         self.parameters = dict()
         self.client = None
-        self.proxy_list = proxy_list
 
-    def prepare_data(self, method, param_key):
+    def _fetch_data(self, method, param_key):
         async_requests = AsyncRequests()
-        users = self.parameters[param_key].split(',')
-        for user in users:
-            self.parameters.update({param_key: user})
+        items = self.parameters[param_key].split(',')
+        for item in items:
+            self.parameters.update({param_key: item})
             async_requests.add_job(gevent.spawn(method, **self.parameters))
         return async_requests.join_jobs()
 
@@ -80,11 +81,11 @@ class VKData(object):
 
     def update_posts(self):
         self.init_client_update_posts()
-        return self.prepare_data(param_key='posts', method=self.client.wall.getById)
+        return self._fetch_data(param_key='posts', method=self.client.wall.getById)
 
     def update_author(self):
         self.init_client_update_authors()
-        return self.prepare_data(param_key='user_ids', method=self.client.users.get)
+        return self._fetch_data(param_key='user_ids', method=self.client.users.get)
 
 
 a = VKData()
