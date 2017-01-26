@@ -3,6 +3,8 @@ import time
 
 from datetime import datetime
 
+import itertools
+
 from client import VKClient
 from client import proxy_list as default_proxy_list
 import gevent
@@ -38,6 +40,32 @@ class VKData(object):
             self.parameters.update({param_key: item})
             async_requests.add_job(gevent.spawn(method, **self.parameters))
         return async_requests.join_jobs()
+
+    def _reformat_posts(self, posts):
+        format_post = FormatPost()
+
+        for post in posts:
+            if 'items' in post:
+                if len(post['items']) != 0:
+                    yield format_post.forming_post_dict(post['items'][0])
+                else:
+                    continue
+            else:
+                yield format_post.forming_post_dict(post)
+
+    def _reformat_authors(self, posts):
+        format_author = FormatAuthor()
+
+        unique_authors = []
+        for post in posts:
+            item = post.get('items')
+            if item and item[0].get('owner_id') not in unique_authors:
+                unique_authors.append(str(item[0].get('owner_id')))
+
+        client = VKClient()
+        authors = client.users.get(user_ids=','.join(unique_authors))
+        for author in authors.get('items'):
+            yield format_author.forming_author_dict(author)
 
     def init_client_from_query(self):
         self.parameters = {
@@ -87,7 +115,11 @@ class VKData(object):
 
     def update_posts(self):
         self.init_client_update_posts()
-        return self._fetch_data(param_key='posts', method=self.client.wall.getById)
+        posts = self._fetch_data(param_key='posts', method=self.client.wall.getById)
+        posts, posts_copy = itertools.tee(posts)
+        formatted_posts = self._reformat_posts(posts)
+        formatted_authors = self._reformat_authors(posts_copy)
+        return formatted_posts, formatted_authors
 
     def update_author(self):
         self.init_client_update_authors()
@@ -95,6 +127,36 @@ class VKData(object):
 
 
 class DataFormatting(object):
+
+    def _get_publish_date(self, value):
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(value))
+
+    def _get_thumbnail(self, content):
+        max_size = 0
+        url = ''
+        for key, value in content.items():
+            if key.startswith('photo_'):
+                size = int(key.split('_')[1])
+                if size > max_size:
+                    max_size = size
+                    url = value
+        return url
+
+    def _get_statistics(self, item):
+        likes = item.get('likes')
+        comments = item.get('comments')
+        shares = item.get('reposts')
+        last_updated = datetime.now()
+        if not likes or not comments or not shares:
+            return 'Empty'
+        else:
+            return {'likes': likes['count'],
+                    'comments': comments['count'],
+                    'shares': shares['count'],
+                    'last_updated': last_updated}
+
+
+class FormatPost(DataFormatting):
 
     def _get_post_type(self, item):
 
@@ -119,19 +181,8 @@ class DataFormatting(object):
         return 'no data'
 
     def _get_original_post(self, post):
-        original_post = post['items'][0]['copy_history']
+        original_post = post['copy_history']
         return original_post
-
-    def _get_thumbnail(self, content):
-        max_size = 0
-        url = ''
-        for key, value in content.items():
-            if key.startswith('photo_'):
-                size = int(key.split('_')[1])
-                if size > max_size:
-                    max_size = size
-                    url = value
-        return url
 
     def _get_attachments(self, item):
         attachments = {}
@@ -162,66 +213,44 @@ class DataFormatting(object):
         post_id = str(item.get('id'))
         return 'https://vk.com/wall' + owner_id + '_' + post_id
 
-    def _get_publish_date(self, item):
-        return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(item.get('date')))
-
     def _get_content(self, item):
         return item.get('text')
 
-    def _get_statistics(self, item):
-        likes = item.get('likes')
-        comments = item.get('comments')
-        shares = item.get('reposts')
-        last_updated = datetime.now()
-        if not likes or not comments or not shares:
-            return 'Empty'
-        else:
-            return {'likes': likes['count'],
-                    'comments': comments['count'],
-                    'shares': shares['count'],
-                    'last_updated': last_updated}
-
-    def forming_post_dict(self, posts):
+    def forming_post_dict(self, post):
         formatted_post = {}
 
-        for post in posts:
-            if 'items' in post:
-                if len(post['items']) != 0:
-                    item = post['items'][0]
-                else:
-                    continue
-            else:
-                item = post
+        if 'copy_history' in post:
+            original_post = self._get_original_post(post)
+            formatted_post['original_post'] = self.forming_post_dict(original_post[0])
 
-            if 'copy_history' in item:
-                original_post = self._get_original_post(post)
-                formatted_post['original_post'] = list(self.forming_post_dict(original_post))[0]
+        formatted_post['url'] = self._get_post_url(post)
+        formatted_post['published_at'] = self._get_publish_date(post.get('date'))
+        formatted_post['post_type'] = self._get_post_type(post)
+        formatted_post['vk_ids'] = self._get_vk_ids(post)
+        formatted_post['content'] = self._get_content(post)
+        formatted_post['statistic'] = self._get_statistics(post)
 
-            formatted_post['url'] = self._get_post_url(item)
-            formatted_post['published_at'] = self._get_publish_date(item)
-            formatted_post['post_type'] = self._get_post_type(item)
-            formatted_post['vk_ids'] = self._get_vk_ids(item)
-            formatted_post['content'] = self._get_content(item)
-            formatted_post['statistic'] = self._get_statistics(item)
+        if formatted_post['post_type'] != 0 and formatted_post['post_type'] != 'no data':
+            formatted_post.update(self._get_attachments(post))
 
-            if formatted_post['post_type'] != 0 and formatted_post['post_type'] != 'no data':
-                formatted_post.update(self._get_attachments(item))
-            yield formatted_post
+        return formatted_post
 
-    def forming_unique_authors(self, posts):
-        unique_authors = []
-        for post in posts:
-            item = post.get('items')
-            if item and item[0].get('owner_id') not in unique_authors:
-                unique_authors.append(item[0].get('owner_id'))
-        return unique_authors
+
+class FormatAuthor(DataFormatting):
+
+    def forming_author_dict(self, author):
+        author_id = author.get('id')
+        first_name = author.get('first_name')
+        last_name = author.get('last_name')
+        url = 'http://vk.com/id%s' % author_id
+
+        return {'id': author_id,
+                'first_name': first_name,
+                'last_name': last_name,
+                'url': url}
+
 
 a = VKData()
 res = a.update_posts()
-result = list(res)  # res - generator
-data_formatting = DataFormatting()
-posts = data_formatting.forming_post_dict(result)
-
-pprint(list(posts))
-authors = data_formatting.forming_unique_authors(result)
-pprint(authors)
+for gen in res:
+    pprint(list(gen))
