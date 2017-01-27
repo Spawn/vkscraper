@@ -2,11 +2,11 @@ from pprint import pprint
 from datetime import datetime
 
 import pytz
+import gevent
 
+from gevent import monkey
 from client import VKClient
 from client import proxy_list as default_proxy_list
-import gevent
-from gevent import monkey
 monkey.patch_all()
 
 
@@ -57,8 +57,21 @@ class VKData(object):
 
         client = VKClient()
         authors = client.users.get(user_ids=','.join(unique_authors))
-        for author in authors.get('items'):
+        for author in authors['items']:
             yield format_author.forming_author_dict(author)
+
+    def _get_authors_statistic(self, authors):
+        statistic = FormatAuthor()
+        for author in authors:
+            yield statistic.forming_author_dict(author['items'][0], statistic=True)
+
+    def _get_posts_statistic(self, posts):
+        statistic = FormatPost()
+        for post in posts:
+            if len(post['items']) != 0:
+                yield statistic.get_statistics(post['items'][0])
+            else:
+                continue
 
     def init_client_from_query(self):
         self.parameters = {
@@ -91,7 +104,7 @@ class VKData(object):
     def init_client_update_authors(self):
         self.parameters = {
             'user_ids': 'aqustics, katya_fofina',
-            'fields': 'counters, photo_id',
+            'fields': 'photo_id, counters',
             'access_token': '2d81c89832f2226c7b848eb0306b3a1219096a1faef6ab9969e99bd9bd5b640c2617edb6d2b165ac05533',
         }
         self.client = VKClient(token=self.parameters['access_token'], proxy_list=self.proxy_list)
@@ -106,15 +119,20 @@ class VKData(object):
     def from_page(self):
         self.init_client_from_page()
         data = self.client.wall.get(**self.parameters)
-        return data
+        formatted_posts = self._reformat_posts(data['items'])
+        return formatted_posts
 
     def update_posts(self):
         self.init_client_update_posts()
-        return self._fetch_data(param_key='posts', method=self.client.wall.getById)
+        data = self._fetch_data(param_key='posts', method=self.client.wall.getById)
+        posts_statistic = self._get_posts_statistic(data)
+        return posts_statistic
 
     def update_author(self):
         self.init_client_update_authors()
-        return self._fetch_data(param_key='user_ids', method=self.client.users.get)
+        data = self._fetch_data(param_key='user_ids', method=self.client.users.get)
+        author_statistic = self._get_authors_statistic(data)
+        return author_statistic
 
 
 class DataFormatting(object):
@@ -136,7 +154,13 @@ class DataFormatting(object):
                         url = value
         return url
 
-    def _get_statistics(self, item):
+    def _build_url(self, prefix, first_id, second_id=None):
+        site_address = 'http://vk.com/'
+        if second_id:
+            return site_address + prefix + str(first_id) + '_' + str(second_id)
+        return site_address + str(prefix) + str(first_id)
+
+    def get_statistics(self, item):
         likes = item.get('likes', 0)
         comments = item.get('comments', 0)
         shares = item.get('reposts', 0)
@@ -145,12 +169,6 @@ class DataFormatting(object):
                 'comments': comments,
                 'shares': shares,
                 'last_updated': last_updated}
-
-    def _build_url(self, prefix, first_id, second_id=None):
-        site_address = 'http://vk.com/'
-        if second_id:
-            return site_address + prefix + str(first_id) + '_' + str(second_id)
-        return site_address + str(prefix) + str(first_id)
 
 
 class FormatPost(DataFormatting):
@@ -229,7 +247,7 @@ class FormatPost(DataFormatting):
         formatted_post['post_type'] = self._get_post_type(post)
         formatted_post['vk'] = self._get_vk_ids(post)
         formatted_post['content'] = self._get_content(post)
-        formatted_post['statistic'] = self._get_statistics(post)
+        formatted_post['statistic'] = self.get_statistics(post)
 
         if formatted_post.get('post_type') and formatted_post['post_type'] != 0:
             formatted_post.update(self._get_attachments(post))
@@ -239,19 +257,15 @@ class FormatPost(DataFormatting):
 
 class FormatAuthor(DataFormatting):
 
-    def forming_author_dict(self, author):
-        author_id = author['id']
-        first_name = author['first_name']
-        last_name = author['last_name']
-        url = self._build_url(prefix='id', first_id=author_id)
+    def forming_author_dict(self, author, statistic=False):
+        author_dict = {'vk': {'author_id': author['id']},
+                       'first_name': author['first_name'],
+                       'last_name': author['last_name'],
+                       'url': self._build_url(prefix='id', first_id=author['id'])}
+        if statistic:
+            counters = author.get('counters')
+            if not counters:
+                raise Exception('For getting statistics from VK api, counters must be added to request fields')
+            author_dict['statistic'] = counters
 
-        return {'id': author_id,
-                'first_name': first_name,
-                'last_name': last_name,
-                'url': url}
-
-
-a = VKData()
-res = a.from_query()
-for gen in res:
-    pprint(list(gen))
+        return author_dict
