@@ -69,7 +69,7 @@ class VKData(object):
         statistic = FormatPost()
         for post in posts:
             if len(post['items']) != 0:
-                yield statistic.get_statistics(post['items'][0])
+                yield statistic.get_post_statistics(post['items'][0])
             else:
                 continue
 
@@ -198,6 +198,11 @@ class FormatPost(DataFormatting):
 
         elif item.get('text'):
             return 0
+
+    def get_post_statistics(self, post):
+        statistic = self.get_statistics(post)
+        post_id = '{}_{}'.format(post['id'], post['owner_id'])
+        return {'statistic': statistic, 'id': post_id}
 
     def _get_original_post(self, post):
         original_post = post['copy_history']
