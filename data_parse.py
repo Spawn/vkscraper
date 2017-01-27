@@ -1,7 +1,7 @@
 from pprint import pprint
 from datetime import datetime
 
-import itertools
+import pytz
 
 from client import VKClient
 from client import proxy_list as default_proxy_list
@@ -41,24 +41,19 @@ class VKData(object):
 
     def _reformat_posts(self, posts):
         format_post = FormatPost()
-
         for post in posts:
-            if 'items' in post:
-                if len(post['items']) != 0:
-                    yield format_post.forming_post_dict(post['items'][0])
-                else:
-                    continue
-            else:
+            if len(post) != 0:
                 yield format_post.forming_post_dict(post)
+            else:
+                continue
 
     def _reformat_authors(self, posts):
         format_author = FormatAuthor()
 
         unique_authors = []
         for post in posts:
-            item = post.get('items')
-            if item and item[0].get('owner_id') not in unique_authors:
-                unique_authors.append(str(item[0].get('owner_id')))
+            if post and post.get('owner_id') not in unique_authors:
+                unique_authors.append(str(post.get('owner_id')))
 
         client = VKClient()
         authors = client.users.get(user_ids=','.join(unique_authors))
@@ -104,7 +99,9 @@ class VKData(object):
     def from_query(self):
         self.init_client_from_query()
         data = self.client.newsfeed.search(**self.parameters)
-        return data
+        formatted_posts = self._reformat_posts(data['items'])
+        formatted_authors = self._reformat_authors(data['items'])
+        return formatted_posts, formatted_authors
 
     def from_page(self):
         self.init_client_from_page()
@@ -113,11 +110,7 @@ class VKData(object):
 
     def update_posts(self):
         self.init_client_update_posts()
-        posts = self._fetch_data(param_key='posts', method=self.client.wall.getById)
-        posts, posts_copy = itertools.tee(posts)
-        formatted_posts = self._reformat_posts(posts)
-        formatted_authors = self._reformat_authors(posts_copy)
-        return formatted_posts, formatted_authors
+        return self._fetch_data(param_key='posts', method=self.client.wall.getById)
 
     def update_author(self):
         self.init_client_update_authors()
@@ -129,27 +122,28 @@ class DataFormatting(object):
     def _get_publish_date(self, value):
         if isinstance(value, int):
             return datetime.utcfromtimestamp(value)
-        raise Exception('Time value must be int')
+        raise Exception('Time value must be integer')
 
     def _get_thumbnail(self, content):
         max_size = 0
-        url = ''
-        for key, value in content.items():
-            if key.startswith('photo_'):
-                size = int(key.split('_')[1])
-                if size > max_size:
-                    max_size = size
-                    url = value
+        url = None
+        if isinstance(content, dict):
+            for key, value in content.items():
+                if key.startswith('photo_'):
+                    size = int(key.split('_')[1])
+                    if size > max_size:
+                        max_size = size
+                        url = value
         return url
 
     def _get_statistics(self, item):
-        likes = item.get('likes')
-        comments = item.get('comments')
-        shares = item.get('reposts')
-        last_updated = datetime.now()
-        return {'likes': likes or 0,
-                'comments': comments or 0,
-                'shares': shares or 0,
+        likes = item.get('likes', 0)
+        comments = item.get('comments', 0)
+        shares = item.get('reposts', 0)
+        last_updated = datetime.now(pytz.utc)
+        return {'likes': likes,
+                'comments': comments,
+                'shares': shares,
                 'last_updated': last_updated}
 
     def _build_url(self, prefix, first_id, second_id=None):
@@ -171,16 +165,18 @@ class FormatPost(DataFormatting):
 
         if 'attachments' in item:
             attachments = item['attachments']
+
             for index in xrange(len(attachments) - 1, -1, -1):
-                if 'audio' in attachments[index]:
+                if attachments[index]['type'] not in ATTACHMENT_TYPES:
                     attachments.pop(index)
 
-            attachment_type = attachments[0]['type']
+            if attachments:
+                attachment_type = attachments[0]['type']
 
-            for attachment in attachments:
-                if attachment_type != attachment['type']:
-                    return 4
-                return ATTACHMENT_TYPES[attachment_type]
+                for attachment in attachments:
+                    if attachment_type != attachment['type']:
+                        return 4
+                    return ATTACHMENT_TYPES[attachment_type]
 
         elif item.get('text'):
             return 0
@@ -205,9 +201,10 @@ class FormatPost(DataFormatting):
             if attachment_type not in attachments:
                 attachments[attachment_type] = list()
             if url:
-                attachments[attachment_type].append({'url': url})
-            if thumbnail:
-                attachments[attachment_type].append({'thumbnail': thumbnail})
+                attachment_dict = {'url': url}
+                if thumbnail:
+                    attachment_dict.update({'thumbnail': thumbnail})
+                attachments[attachment_type].append(attachment_dict)
 
         return attachments
 
@@ -230,7 +227,7 @@ class FormatPost(DataFormatting):
         formatted_post['url'] = self._build_url(prefix='wall', first_id=post.get('owner_id'), second_id=post.get('id'))
         formatted_post['published_at'] = self._get_publish_date(post.get('date'))
         formatted_post['post_type'] = self._get_post_type(post)
-        formatted_post['vk_ids'] = self._get_vk_ids(post)
+        formatted_post['vk'] = self._get_vk_ids(post)
         formatted_post['content'] = self._get_content(post)
         formatted_post['statistic'] = self._get_statistics(post)
 
@@ -243,9 +240,9 @@ class FormatPost(DataFormatting):
 class FormatAuthor(DataFormatting):
 
     def forming_author_dict(self, author):
-        author_id = author.get('id')
-        first_name = author.get('first_name')
-        last_name = author.get('last_name')
+        author_id = author['id']
+        first_name = author['first_name']
+        last_name = author['last_name']
         url = self._build_url(prefix='id', first_id=author_id)
 
         return {'id': author_id,
@@ -255,6 +252,6 @@ class FormatAuthor(DataFormatting):
 
 
 a = VKData()
-res = a.update_posts()
+res = a.from_query()
 for gen in res:
     pprint(list(gen))
