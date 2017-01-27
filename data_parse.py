@@ -1,6 +1,4 @@
 from pprint import pprint
-import time
-
 from datetime import datetime
 
 import itertools
@@ -129,7 +127,9 @@ class VKData(object):
 class DataFormatting(object):
 
     def _get_publish_date(self, value):
-        return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(value))
+        if isinstance(value, int):
+            return datetime.utcfromtimestamp(value)
+        raise Exception('Time value must be int')
 
     def _get_thumbnail(self, content):
         max_size = 0
