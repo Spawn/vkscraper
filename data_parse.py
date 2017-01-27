@@ -147,13 +147,16 @@ class DataFormatting(object):
         comments = item.get('comments')
         shares = item.get('reposts')
         last_updated = datetime.now()
-        if not likes or not comments or not shares:
-            return 'Empty'
-        else:
-            return {'likes': likes['count'],
-                    'comments': comments['count'],
-                    'shares': shares['count'],
-                    'last_updated': last_updated}
+        return {'likes': likes or 0,
+                'comments': comments or 0,
+                'shares': shares or 0,
+                'last_updated': last_updated}
+
+    def _build_url(self, prefix, first_id, second_id=None):
+        site_address = 'http://vk.com/'
+        if second_id:
+            return site_address + prefix + str(first_id) + '_' + str(second_id)
+        return site_address + str(prefix) + str(first_id)
 
 
 class FormatPost(DataFormatting):
@@ -167,18 +170,20 @@ class FormatPost(DataFormatting):
         }
 
         if 'attachments' in item:
-            [item['attachments'].pop(x) for x in xrange(len(item['attachments']) - 1, -1, -1) if
-             'audio' in item['attachments'][x]]
-            attachment_type = item['attachments'][0]['type']
-            for attachment in item['attachments']:
+            attachments = item['attachments']
+            for index in xrange(len(attachments) - 1, -1, -1):
+                if 'audio' in attachments[index]:
+                    attachments.pop(index)
+
+            attachment_type = attachments[0]['type']
+
+            for attachment in attachments:
                 if attachment_type != attachment['type']:
                     return 4
                 return ATTACHMENT_TYPES[attachment_type]
 
         elif item.get('text'):
             return 0
-
-        return 'no data'
 
     def _get_original_post(self, post):
         original_post = post['copy_history']
@@ -190,31 +195,30 @@ class FormatPost(DataFormatting):
         for attachment in item['attachments']:
             attachment_type = attachment['type']
             attachment_content = attachment[attachment_type]
+            thumbnail = self._get_thumbnail(attachment_content)
             if attachment_type == 'link':
                 url = attachment_content.get('url')
             else:
-                url = 'https://vk.com/' + attachment_type + \
-                      str(attachment_content['owner_id']) + \
-                      '_' + str(attachment_content['id'])
+                url = self._build_url(prefix=attachment_type, first_id=attachment_content['owner_id'],
+                                      second_id=attachment_content['id'])
 
             if attachment_type not in attachments:
                 attachments[attachment_type] = list()
-            attachments[attachment_type].append({'url': url,
-                                                 'thumbnail': self._get_thumbnail(attachment_content)})
+            if url:
+                attachments[attachment_type].append({'url': url})
+            if thumbnail:
+                attachments[attachment_type].append({'thumbnail': thumbnail})
+
         return attachments
 
     def _get_vk_ids(self, item):
-        post_id = item.get('id')
-        owner_id = item.get('owner_id')
+        post_id = item['id']
+        owner_id = item['owner_id']
         return {'post_id': post_id, 'author_id': owner_id}
 
-    def _get_post_url(self, item):
-        owner_id = str(item.get('owner_id'))
-        post_id = str(item.get('id'))
-        return 'https://vk.com/wall' + owner_id + '_' + post_id
-
     def _get_content(self, item):
-        return item.get('text')
+        if 'text' in item and isinstance(item, dict):
+            return item.get('text')
 
     def forming_post_dict(self, post):
         formatted_post = {}
@@ -223,14 +227,14 @@ class FormatPost(DataFormatting):
             original_post = self._get_original_post(post)
             formatted_post['original_post'] = self.forming_post_dict(original_post[0])
 
-        formatted_post['url'] = self._get_post_url(post)
+        formatted_post['url'] = self._build_url(prefix='wall', first_id=post.get('owner_id'), second_id=post.get('id'))
         formatted_post['published_at'] = self._get_publish_date(post.get('date'))
         formatted_post['post_type'] = self._get_post_type(post)
         formatted_post['vk_ids'] = self._get_vk_ids(post)
         formatted_post['content'] = self._get_content(post)
         formatted_post['statistic'] = self._get_statistics(post)
 
-        if formatted_post['post_type'] != 0 and formatted_post['post_type'] != 'no data':
+        if formatted_post.get('post_type') and formatted_post['post_type'] != 0:
             formatted_post.update(self._get_attachments(post))
 
         return formatted_post
@@ -242,7 +246,7 @@ class FormatAuthor(DataFormatting):
         author_id = author.get('id')
         first_name = author.get('first_name')
         last_name = author.get('last_name')
-        url = 'http://vk.com/id%s' % author_id
+        url = self._build_url(prefix='id', first_id=author_id)
 
         return {'id': author_id,
                 'first_name': first_name,
