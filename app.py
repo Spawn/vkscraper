@@ -32,7 +32,7 @@ class VKData(object):
         format_post = FormatPost()
         for post in posts:
             if len(post) != 0:
-                yield format_post.forming_post_dict(post)
+                yield format_post.as_dict(post)
             else:
                 continue
 
@@ -47,12 +47,12 @@ class VKData(object):
         client = VKClient()
         authors = client.users.get(user_ids=','.join(unique_authors))
         for author in authors['items']:
-            yield format_author.forming_author_dict(author)
+            yield format_author.as_dict(author)
 
     def _get_authors_statistic(self, authors):
         statistic = FormatAuthor()
         for author in authors:
-            yield statistic.forming_author_dict(author['items'][0], statistic=True)
+            yield statistic.as_dict(author['items'][0], statistic=True)
 
     def _get_posts_statistic(self, posts):
         statistic = FormatPost()
@@ -122,7 +122,7 @@ class VKData(object):
         return author_statistic
 
 
-class DataFormatting(object):
+class DataFormatter(object):
 
     def generate_uid_from_string(self, astring):
         return UUID(hashlib.md5(astring.encode('utf-8')).hexdigest())
@@ -161,7 +161,7 @@ class DataFormatting(object):
                 'last_updated': last_updated}
 
 
-class FormatPost(DataFormatting):
+class FormatPost(DataFormatter):
 
     def _get_post_type(self, item):
 
@@ -169,6 +169,7 @@ class FormatPost(DataFormatting):
             'photo': 1,
             'video': 2,
             'link': 3,
+            'mixed': 4,
         }
 
         if 'attachments' in item:
@@ -183,7 +184,7 @@ class FormatPost(DataFormatting):
 
                 for attachment in attachments:
                     if attachment_type != attachment['type']:
-                        return 4
+                        return ATTACHMENT_TYPES['mixed']
                     return ATTACHMENT_TYPES[attachment_type]
 
         elif item.get('text'):
@@ -230,12 +231,12 @@ class FormatPost(DataFormatting):
         if 'text' in item and isinstance(item, dict):
             return item.get('text')
 
-    def forming_post_dict(self, post):
+    def as_dict(self, post):
         formatted_post = {}
 
         if 'copy_history' in post:
             original_post = self._get_original_post(post)
-            formatted_post['original_post'] = self.forming_post_dict(original_post[0])
+            formatted_post['original_post'] = self.as_dict(original_post[0])
 
         formatted_post['_id'] = self.generate_uid_from_string('vk_post_{}'.format(str(post['id'])))
         formatted_post['author_id'] = self.generate_uid_from_string('vk_author_{}'.format(str(post['owner_id'])))
@@ -252,9 +253,9 @@ class FormatPost(DataFormatting):
         return formatted_post
 
 
-class FormatAuthor(DataFormatting):
+class FormatAuthor(DataFormatter):
 
-    def forming_author_dict(self, author, statistic=False):
+    def as_dict(self, author, statistic=False):
         author_dict = {'_id': self.generate_uid_from_string('vk_author_{}'.format(author['id'])),
                        'vk': {'author_id': author['id']},
                        'first_name': author['first_name'],
