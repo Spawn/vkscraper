@@ -1,28 +1,17 @@
-from pprint import pprint
+import hashlib
 from datetime import datetime
+from pprint import pprint
+from uuid import UUID
 
-import pytz
 import gevent
-
+import pytz
 from gevent import monkey
-from client import VKClient
-from client import proxy_list as default_proxy_list
+
+from core.async_utils import AsyncRequests
+from core.client.client import VKClient
+from proxies import DEFAULT_PROXY_LIST as default_proxy_list
+
 monkey.patch_all()
-
-
-class AsyncRequests(object):
-
-    def __init__(self, timeout):
-        self.jobs_pull = []
-        self.timeout = timeout
-
-    def add_job(self, job):
-        self.jobs_pull.append(job)
-
-    def join_jobs(self):
-        timeout = len(self.jobs_pull) * self.timeout
-        for result in gevent.joinall(self.jobs_pull, timeout=timeout):
-            yield result.get()
 
 
 class VKData(object):
@@ -75,10 +64,8 @@ class VKData(object):
 
     def init_client_from_query(self):
         self.parameters = {
-            'q': 'cat',
+            'q': 'space',
             'count': 40,
-            'start_time': 1483056000,
-            'end_time': 1484697600,
             'access_token': '2d81c89832f2226c7b848eb0306b3a1219096a1faef6ab9969e99bd9bd5b640c2617edb6d2b165ac05533',
         }
         self.client = VKClient(token=self.parameters['access_token'], proxy_list=self.proxy_list)
@@ -103,7 +90,7 @@ class VKData(object):
 
     def init_client_update_authors(self):
         self.parameters = {
-            'user_ids': 'aqustics, katya_fofina',
+            'user_ids': 'aqustics, katya_fofina, 322615035',
             'fields': 'photo_id, counters',
             'access_token': '2d81c89832f2226c7b848eb0306b3a1219096a1faef6ab9969e99bd9bd5b640c2617edb6d2b165ac05533',
         }
@@ -136,6 +123,9 @@ class VKData(object):
 
 
 class DataFormatting(object):
+
+    def generate_uid_from_string(self, astring):
+        return UUID(hashlib.md5(astring.encode('utf-8')).hexdigest())
 
     def _get_publish_date(self, value):
         if isinstance(value, int):
@@ -201,8 +191,8 @@ class FormatPost(DataFormatting):
 
     def get_post_statistics(self, post):
         statistic = self.get_statistics(post)
-        post_id = '{}_{}'.format(post['id'], post['owner_id'])
-        return {'statistic': statistic, 'id': post_id}
+        post_id = 'vk_post_{}_{}'.format(post['id'], post['owner_id'])
+        return {'statistic': statistic, '_id': self.generate_uid_from_string(post_id)}
 
     def _get_original_post(self, post):
         original_post = post['copy_history']
@@ -232,8 +222,8 @@ class FormatPost(DataFormatting):
         return attachments
 
     def _get_vk_ids(self, item):
-        post_id = item['id']
-        owner_id = item['owner_id']
+        post_id = str(item['id'])
+        owner_id = str(item['owner_id'])
         return {'post_id': post_id, 'author_id': owner_id}
 
     def _get_content(self, item):
@@ -247,6 +237,8 @@ class FormatPost(DataFormatting):
             original_post = self._get_original_post(post)
             formatted_post['original_post'] = self.forming_post_dict(original_post[0])
 
+        formatted_post['_id'] = self.generate_uid_from_string('vk_post_{}'.format(str(post['id'])))
+        formatted_post['author_id'] = self.generate_uid_from_string('vk_author_{}'.format(str(post['owner_id'])))
         formatted_post['url'] = self._build_url(prefix='wall', first_id=post.get('owner_id'), second_id=post.get('id'))
         formatted_post['published_at'] = self._get_publish_date(post.get('date'))
         formatted_post['post_type'] = self._get_post_type(post)
@@ -263,14 +255,25 @@ class FormatPost(DataFormatting):
 class FormatAuthor(DataFormatting):
 
     def forming_author_dict(self, author, statistic=False):
-        author_dict = {'vk': {'author_id': author['id']},
+        author_dict = {'_id': self.generate_uid_from_string('vk_author_{}'.format(author['id'])),
+                       'vk': {'author_id': author['id']},
                        'first_name': author['first_name'],
                        'last_name': author['last_name'],
                        'url': self._build_url(prefix='id', first_id=author['id'])}
         if statistic:
-            counters = author.get('counters')
-            if not counters:
-                raise Exception('For getting statistics from VK api, counters must be added to request fields')
-            author_dict['statistic'] = counters
-
+            try:
+                counters = author['counters']
+                author_dict['statistic'] = counters
+            except:
+                print('For getting statistics from VK api, counters must be'
+                      ' added to request fields and user page must be accessible')
         return author_dict
+
+vk = VKData()
+res = vk.from_query()
+
+# pprint(list(res))
+#
+for i in res:
+    for y in i:
+        pprint(list(i))
