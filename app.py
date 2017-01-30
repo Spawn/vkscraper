@@ -1,14 +1,14 @@
 import hashlib
-from datetime import datetime
-from pprint import pprint
-from uuid import UUID
-
 import gevent
 import pytz
+
+from datetime import datetime
+from uuid import UUID
+
 from gevent import monkey
 
 from core.async_utils import AsyncRequests
-from core.client.client import VKClient
+from core.client import VKClient
 from proxies import DEFAULT_PROXY_LIST as default_proxy_list
 
 monkey.patch_all()
@@ -163,29 +163,29 @@ class DataFormatter(object):
 
 class FormatPost(DataFormatter):
 
-    def _get_post_type(self, item):
+    ATTACHMENT_TYPES = {
+        'photo': 1,
+        'video': 2,
+        'link': 3,
+        'mixed': 4,
+    }
 
-        ATTACHMENT_TYPES = {
-            'photo': 1,
-            'video': 2,
-            'link': 3,
-            'mixed': 4,
-        }
+    def _get_post_type(self, item):
 
         if 'attachments' in item:
             attachments = item['attachments']
+            filtered_attachments = []
+            for attachment in attachments:
+                if attachment['type'] in self.ATTACHMENT_TYPES:
+                    filtered_attachments.append(attachment)
 
-            for index in xrange(len(attachments) - 1, -1, -1):
-                if attachments[index]['type'] not in ATTACHMENT_TYPES:
-                    attachments.pop(index)
+            if filtered_attachments:
+                attachment_type = filtered_attachments[0]['type']
 
-            if attachments:
-                attachment_type = attachments[0]['type']
-
-                for attachment in attachments:
+                for attachment in filtered_attachments:
                     if attachment_type != attachment['type']:
-                        return ATTACHMENT_TYPES['mixed']
-                    return ATTACHMENT_TYPES[attachment_type]
+                        return self.ATTACHMENT_TYPES['mixed']
+                    return self.ATTACHMENT_TYPES[attachment_type]
 
         elif item.get('text'):
             return 0
@@ -203,6 +203,8 @@ class FormatPost(DataFormatter):
         attachments = {}
 
         for attachment in item['attachments']:
+            if attachment['type'] not in self.ATTACHMENT_TYPES:
+                continue
             attachment_type = attachment['type']
             attachment_content = attachment[attachment_type]
             thumbnail = self._get_thumbnail(attachment_content)
@@ -269,12 +271,3 @@ class FormatAuthor(DataFormatter):
                 print('For getting statistics from VK api, counters must be'
                       ' added to request fields and user page must be accessible')
         return author_dict
-
-vk = VKData()
-res = vk.from_query()
-
-# pprint(list(res))
-#
-for i in res:
-    for y in i:
-        pprint(list(i))
