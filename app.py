@@ -1,13 +1,9 @@
 import gevent
 
-from gevent import monkey
-
 from core.async_utils import AsyncRequests
 from core.client import VKClient
 from core.data_formatter import FormatAuthor, FormatPost
 from proxies import DEFAULT_PROXY_LIST as default_proxy_list
-
-monkey.patch_all()
 
 
 class VKData(object):
@@ -111,7 +107,7 @@ class VKData(object):
         posts_statistic = self._get_posts_statistic(data)
         return posts_statistic
 
-    def update_author(self):
+    def update_authors(self):
         self.init_client_update_authors()
         data = self._fetch_data(param_key='user_ids', method=self.client.users.get)
         author_statistic = self._get_authors_statistic(data)
