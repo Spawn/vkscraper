@@ -6,6 +6,9 @@ from uuid import UUID
 
 
 class DataFormatter(object):
+    """
+    Base class for formatting data which returns from VK api.
+    """
 
     def generate_uid_from_string(self, astring):
         return UUID(hashlib.md5(astring.encode('utf-8')).hexdigest())
@@ -16,6 +19,13 @@ class DataFormatter(object):
         raise Exception('Time value must be integer')
 
     def _get_thumbnail(self, content):
+        """
+        Receive content dict with thumbnails.
+        Return url with max thumbnail size.
+        :param content:
+        :return: url
+        """
+
         max_size = 0
         url = None
         if isinstance(content, dict):
@@ -28,10 +38,18 @@ class DataFormatter(object):
         return url
 
     def _build_url(self, prefix, first_id, second_id=None):
+        """
+        Build the link to vk item from id.
+        :param prefix:
+        :param first_id:
+        :param second_id:
+        :return:
+        """
+
         site_address = 'http://vk.com/'
         if second_id:
-            return site_address + prefix + str(first_id) + '_' + str(second_id)
-        return site_address + str(prefix) + str(first_id)
+            return '{}{}{}{}{}'.format(site_address, prefix, str(first_id), '_', str(second_id))
+        return '{}{}{}'.format(site_address, str(prefix), str(first_id))
 
     def get_statistics(self, item):
         likes = item.get('likes', 0)
@@ -45,6 +63,9 @@ class DataFormatter(object):
 
 
 class FormatPost(DataFormatter):
+    """
+    Formats wall post data from VK to custom format.
+    """
 
     ATTACHMENT_TYPES = {
         'photo': 1,
@@ -79,10 +100,23 @@ class FormatPost(DataFormatter):
         return {'statistic': statistic, '_id': self.generate_uid_from_string(post_id)}
 
     def _get_original_post(self, post):
+        """
+        Receive post. Returns inserted post which been shared.
+        :param post:
+        :return:
+        """
+
         original_post = post['copy_history']
         return original_post
 
     def _get_attachments(self, item):
+        """
+        Receives item with data from VK api and gets
+        attachments which set in ATTACHMENT_TYPES
+        :param item:
+        :return:
+        """
+
         attachments = {}
 
         for attachment in item['attachments']:
@@ -113,10 +147,22 @@ class FormatPost(DataFormatter):
         return {'post_id': post_id, 'author_id': owner_id}
 
     def _get_content(self, item):
+        """
+        Getting text data from wall post.
+        :param item:
+        :return:
+        """
+
         if 'text' in item and isinstance(item, dict):
             return item.get('text')
 
     def as_dict(self, post):
+        """
+        Represents data with wall post from VK
+        api to custom format and returns it as dict.
+        :param post:
+        :return:
+        """
         formatted_post = {}
 
         if 'copy_history' in post:
@@ -139,8 +185,19 @@ class FormatPost(DataFormatter):
 
 
 class FormatAuthor(DataFormatter):
+    """
+    Formats user profile data from VK to custom format.
+    """
 
     def as_dict(self, author, statistic=False):
+        """
+        Represents data with user profile from VK
+        api to custom format and returns it as dict.
+        :param author:
+        :param statistic: returns user statistic if True
+        :return:
+        """
+
         author_dict = {'_id': self.generate_uid_from_string('vk_author_{}'.format(author['id'])),
                        'vk': {'author_id': author['id']},
                        'first_name': author['first_name'],

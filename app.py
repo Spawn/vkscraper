@@ -11,6 +11,9 @@ class SocialScrapper(Daemon):
 
 
 class VKScrapper(SocialScrapper):
+    """
+    It allows to scrape data from VK
+    """
 
     def __init__(self, pidfile=None, proxy_list=None):
         super(VKScrapper, self).__init__(pidfile)
@@ -18,12 +21,13 @@ class VKScrapper(SocialScrapper):
         self.parameters = dict()
         self.client = None
 
-    def _fetch_data(self, method, param_key):
+    def _fetch_data(self, api_method, param_key):
         async_requests = AsyncRequests(timeout=3)
         items = self.parameters[param_key].split(',')
+
         for item in items:
             self.parameters.update({param_key: item})
-            async_requests.add_job(gevent.spawn(method, **self.parameters))
+            async_requests.add_job(gevent.spawn(api_method, **self.parameters))
         return async_requests.join_jobs()
 
     def _reformat_posts(self, posts):
@@ -60,6 +64,9 @@ class VKScrapper(SocialScrapper):
             else:
                 continue
 
+
+class VKFromQuery(VKScrapper):
+
     def init_client_from_query(self):
         self.parameters = {
             'q': 'space',
@@ -68,12 +75,49 @@ class VKScrapper(SocialScrapper):
         }
         self.client = VKClient(token=self.parameters['access_token'], proxy_list=self.proxy_list)
 
+    def run(self):
+        self.init_client_from_query()
+        data = self.client.newsfeed.search(**self.parameters)
+        formatted_posts = self._reformat_posts(data['items'])
+        formatted_authors = self._reformat_authors(data['items'])
+
+        for item in formatted_posts:
+            with open(self.__class__.__name__, 'a') as f:
+                f.write(str(item))
+
+        for item in formatted_authors:
+            with open(self.__class__.__name__, 'a') as f:
+                f.write(str(item))
+
+        return formatted_posts, formatted_authors
+
+    def __str__(self):
+        return self.__class__.__name__
+
+
+class VKFromPage(VKScrapper):
+
     def init_client_from_page(self):
         self.parameters = {
             'owner_id': 15723625,
             'access_token': '2d81c89832f2226c7b848eb0306b3a1219096a1faef6ab9969e99bd9bd5b640c2617edb6d2b165ac05533',
         }
         self.client = VKClient(token=self.parameters['access_token'], proxy_list=self.proxy_list)
+
+    def run(self):
+        self.init_client_from_page()
+        data = self.client.wall.get(**self.parameters)
+        formatted_posts = self._reformat_posts(data['items'])
+        for item in formatted_posts:
+            with open(self.__class__.__name__, 'a') as f:
+                f.write(str(item))
+        return formatted_posts
+
+    def __str__(self):
+        return self.__class__.__name__
+
+
+class VKUpdatePosts(VKScrapper):
 
     def init_client_update_posts(self):
         self.parameters = {
@@ -86,6 +130,21 @@ class VKScrapper(SocialScrapper):
         }
         self.client = VKClient(token=self.parameters['access_token'], proxy_list=self.proxy_list)
 
+    def run(self):
+        self.init_client_update_posts()
+        data = self._fetch_data(param_key='posts', api_method=self.client.wall.getById)
+        posts_statistic = self._get_posts_statistic(data)
+        for item in posts_statistic:
+            with open(self.__class__.__name__, 'a') as f:
+                f.write(str(item))
+        return posts_statistic
+
+    def __str__(self):
+        return self.__class__.__name__
+
+
+class VKUpdateAuthors(VKScrapper):
+
     def init_client_update_authors(self):
         self.parameters = {
             'user_ids': 'aqustics, katya_fofina, 322615035',
@@ -94,54 +153,14 @@ class VKScrapper(SocialScrapper):
         }
         self.client = VKClient(token=self.parameters['access_token'], proxy_list=self.proxy_list)
 
-
-class VKFromQuery(VKScrapper):
-
-    def run(self):
-        self.init_client_from_query()
-        data = self.client.newsfeed.search(**self.parameters)
-        formatted_posts = self._reformat_posts(data['items'])
-        formatted_authors = self._reformat_authors(data['items'])
-        for item in formatted_posts:
-            with open(self.__class__.__name__, 'a') as f:
-                f.write(str(item))
-        for item in formatted_authors:
-            with open(self.__class__.__name__, 'a') as f:
-                f.write(str(item))
-        return formatted_posts, formatted_authors
-
-
-class VKFromPage(VKScrapper):
-
-    def run(self):
-        self.init_client_from_page()
-        data = self.client.wall.get(**self.parameters)
-        formatted_posts = self._reformat_posts(data['items'])
-        for item in formatted_posts:
-            with open(self.__class__.__name__, 'a') as f:
-                f.write(str(item))
-        return formatted_posts
-
-
-class VKUpdatePosts(VKScrapper):
-
-    def run(self):
-        self.init_client_update_posts()
-        data = self._fetch_data(param_key='posts', method=self.client.wall.getById)
-        posts_statistic = self._get_posts_statistic(data)
-        for item in posts_statistic:
-            with open(self.__class__.__name__, 'a') as f:
-                f.write(str(item))
-        return posts_statistic
-
-
-class VKUpdateAuthors(VKScrapper):
-
     def run(self):
         self.init_client_update_authors()
-        data = self._fetch_data(param_key='user_ids', method=self.client.users.get)
+        data = self._fetch_data(param_key='user_ids', api_method=self.client.users.get)
         author_statistic = self._get_authors_statistic(data)
         for item in author_statistic:
             with open(self.__class__.__name__, 'a') as f:
                 f.write(str(item))
         return author_statistic
+
+    def __str__(self):
+        return self.__class__.__name__

@@ -2,6 +2,10 @@ from core.client.request import ClientRequest, DoRequest
 
 
 class VKClient(object):
+    """
+    It allows to scrape data from VK API
+    """
+
     version = '5.62'
 
     VALID_METHODS = (

@@ -75,7 +75,8 @@ class Manager(object):
     def __init__(self, daemon=True):
         self.workers = test_conf.WORKERS
         if not self.workers:
-            raise Exception('No one worker is specified, check the test_conf.py')
+            raise Exception('No one worker is specified,'
+                            ' check the test_conf.py')
         self.daemon = daemon
 
     def _init_worker(self, worker_name):
