@@ -26,6 +26,9 @@ class Manager(object):
         self.action = getattr(arguments, 'action')
         self.api_methods = getattr(arguments, 'api_methods')
 
+        if not os.path.exists(self.pids_dir):
+            os.makedirs(self.pids_dir)
+
         if self.api_methods == '*:*':
             for scraper in settings.CONF:
                 self.scrapers.append(scraper)
@@ -126,13 +129,15 @@ class Manager(object):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Pacing data from VK')
-    parser.add_argument('--action', help='For workers manage. Allows start|restart|stop')
-    parser.add_argument('--api_methods', help='Required the scraper name and it method(s). '
-                                              'Example: vk:from.query:from.page. '
-                                              'Command *:* runs all scrapers and workers.')
-    parser.add_argument('--daemon', default=True, help='Flag to running workers as daemons. '
+    parser.add_argument('action', help='For workers manage. Allows start|restart|stop')
+    parser.add_argument('api_methods', help='Required the scraper name and it method(s). '
+                                            'Example: vk:from.query:from.page. '
+                                            'Command *:* runs all scrapers and workers.')
+    parser.add_argument('daemon', default=True, help='Flag to running workers as daemons. '
                                                      'Default: True', )
     args = parser.parse_args()
+    # logging.basicConfig(filename='/home/bogdan/Projects/vkscraper/log_config')
+    # logger = logging.getLogger(__name__)
     logging.basicConfig(format=u'[%(asctime)s] %(levelname)-4s %(filename)s'
                                u' [LINE:%(lineno)d] %(funcName)s # %(message)s',
                         level=logging.DEBUG)
