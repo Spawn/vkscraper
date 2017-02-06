@@ -1,9 +1,13 @@
+import json
+
 import gevent
 from py_daemon.py_daemon import Daemon
 from core.async_utils import AsyncRequests
 from core.client import VKClient
+from core.client.vk_logger import VKLogger
 from core.data_formatter import FormatAuthor, FormatPost
 from proxies import DEFAULT_PROXY_LIST as default_proxy_list
+import pika
 
 
 class SocialScrapper(Daemon):
@@ -16,14 +20,20 @@ class VKScrapper(SocialScrapper):
     """
 
     def __init__(self, pidfile=None, proxy_list=None):
+        self.connection = pika.BlockingConnection(pika.ConnectionParameters(
+            host='localhost', channel_max=20))
         super(VKScrapper, self).__init__(pidfile)
         self.proxy_list = proxy_list if proxy_list else default_proxy_list
         self.parameters = dict()
         self.client = None
+        self.channel = None
 
     def _fetch_data(self, api_method, param_key):
+        VKLogger.log.debug('BEGIN FETCHING DATA')
         async_requests = AsyncRequests(timeout=3)
+        VKLogger.log.debug('PARAM KEY: %s' % self.parameters[param_key])
         items = self.parameters[param_key].split(',')
+        VKLogger.log.debug('ITEMS: %s' % items)
 
         for item in items:
             self.parameters.update({param_key: item})
@@ -64,20 +74,74 @@ class VKScrapper(SocialScrapper):
             else:
                 continue
 
+    def init_scraper(self, scraper_name):
+        VKLogger.log.debug('START INIT')
+        self.channel.exchange_declare(exchange=scraper_name,
+                                      type='topic')
+
+        result = self.channel.queue_declare(exclusive=True)
+        queue_name = result.method.queue
+        VKLogger.log.debug(queue_name)
+        self.channel.queue_bind(exchange=scraper_name,
+                                queue=queue_name,
+                                routing_key='#')
+        return queue_name
+
+    # def __callback(self, ch, method, properties, body):
+    #     parameters = json.loads(body)
+    #
+    #     VKLogger.log.debug('PARAMETERS UNPACKED: %s' % parameters)
+    #     VKLogger.log.debug("TOKEN: %s" % parameters['access_token'])
+    #
+    #     self.client = VKClient(token=parameters['access_token'], proxy_list=self.proxy_list)
+    #
+    #     VKLogger.log.debug('CLIENT INITIALIZED: %s' % self.client)
+    #
+    #     data = getattr(self.client, method.exchange)(**parameters)
+    #
+    #     VKLogger.log.debug("DATA: %s" % data)
+    #
+    #     formatted_posts = self._reformat_posts(data['items'])
+    #     formatted_authors = self._reformat_authors(data['items'])
+    #
+    #     for item in formatted_posts:
+    #         with open(self.__class__.__name__, 'a') as f:
+    #             f.write(str(item))
+    #
+    #     for item in formatted_authors:
+    #         with open(self.__class__.__name__, 'a') as f:
+    #             f.write(str(item))
+    #     VKLogger.log.debug('CALLBACK')
+
 
 class VKFromQuery(VKScrapper):
-
-    def init_client_from_query(self):
-        self.parameters = {
-            'q': 'space',
-            'count': 40,
-            'access_token': '2d81c89832f2226c7b848eb0306b3a1219096a1faef6ab9969e99bd9bd5b640c2617edb6d2b165ac05533',
-        }
-        self.client = VKClient(token=self.parameters['access_token'], proxy_list=self.proxy_list)
+    scraper_name = 'from.query'
 
     def run(self):
-        self.init_client_from_query()
+        self.channel = self.connection.channel(1)
+
+        queue_name = self.init_scraper(self.scraper_name)
+        self.channel.basic_consume(self.callback,
+                                   queue=queue_name,
+                                   no_ack=True)
+        VKLogger.log.debug('BEFORE START LISTENING')
+        self.channel.start_consuming()
+
+    def callback(self, ch, method, properties, body):
+        VKLogger.log.debug('CALLBACK BEGIN')
+        self.parameters = json.loads(body)
+
+        VKLogger.log.debug('PARAMETERS UNPACKED: %s' % self.parameters)
+        VKLogger.log.debug("TOKEN: %s" % self.parameters['access_token'])
+
+        self.client = VKClient(token=self.parameters['access_token'], proxy_list=self.proxy_list)
+
+        VKLogger.log.debug('CLIENT INITIALIZED: %s' % self.client)
+
         data = self.client.newsfeed.search(**self.parameters)
+
+        VKLogger.log.debug("DATA: %s" % data)
+
         formatted_posts = self._reformat_posts(data['items'])
         formatted_authors = self._reformat_authors(data['items'])
 
@@ -89,78 +153,134 @@ class VKFromQuery(VKScrapper):
             with open(self.__class__.__name__, 'a') as f:
                 f.write(str(item))
 
-        return formatted_posts, formatted_authors
+        VKLogger.log.debug('CALLBACK END')
 
     def __str__(self):
         return self.__class__.__name__
 
 
 class VKFromPage(VKScrapper):
-
-    def init_client_from_page(self):
-        self.parameters = {
-            'owner_id': 15723625,
-            'access_token': '2d81c89832f2226c7b848eb0306b3a1219096a1faef6ab9969e99bd9bd5b640c2617edb6d2b165ac05533',
-        }
-        self.client = VKClient(token=self.parameters['access_token'], proxy_list=self.proxy_list)
+    scraper_name = 'from.page'
 
     def run(self):
-        self.init_client_from_page()
+        self.channel = self.connection.channel(2)
+
+        queue_name = self.init_scraper(self.scraper_name)
+        self.channel.basic_consume(self.callback,
+                                   queue=queue_name,
+                                   no_ack=True)
+        VKLogger.log.debug('BEFORE START LISTENING')
+        self.channel.start_consuming()
+
+    def callback(self, ch, method, properties, body):
+        VKLogger.log.debug('CALLBACK BEGIN')
+
+        VKLogger.log.debug(method)
+
+        self.parameters = json.loads(body)
+
+        VKLogger.log.debug('PARAMETERS UNPACKED: %s' % self.parameters)
+        VKLogger.log.debug("TOKEN: %s" % self.parameters['access_token'])
+
+        self.client = VKClient(token=self.parameters['access_token'], proxy_list=self.proxy_list)
+
+        VKLogger.log.debug('CLIENT INITIALIZED: %s' % self.client)
+
         data = self.client.wall.get(**self.parameters)
+
+        VKLogger.log.debug("DATA: %s" % data)
+
         formatted_posts = self._reformat_posts(data['items'])
         for item in formatted_posts:
             with open(self.__class__.__name__, 'a') as f:
                 f.write(str(item))
-        return formatted_posts
+
+        VKLogger.log.debug('CALLBACK END')
 
     def __str__(self):
         return self.__class__.__name__
 
 
 class VKUpdatePosts(VKScrapper):
-
-    def init_client_update_posts(self):
-        self.parameters = {
-            'posts': '15723625_5801, 15723625_5800,15723625_5799,15723625_5798,15723625_5797,\
-            15723625_5796,15723625_5795,15723625_5794,15723625_5793, 15723625_5792,15723625_5791,\
-            15723625_5790,15723625_5789,15723625_5788,15723625_5787,15723625_5786,15723625_5784,\
-            15723625_5783,15723625_5782,43291122_33348,15723625_5806,15723625_5808,15723625_5809',
-            'access_token': '',
-            'extended': '1',
-        }
-        self.client = VKClient(token=self.parameters['access_token'], proxy_list=self.proxy_list)
+    scraper_name = 'update.posts'
 
     def run(self):
-        self.init_client_update_posts()
+        self.channel = self.connection.channel(3)
+
+        queue_name = self.init_scraper(self.scraper_name)
+        self.channel.basic_consume(self.callback,
+                                   queue=queue_name,
+                                   no_ack=True)
+        VKLogger.log.debug('BEFORE START LISTENING')
+        self.channel.start_consuming()
+
+    def callback(self, ch, method, properties, body):
+        VKLogger.log.debug('CALLBACK BEGIN')
+
+        VKLogger.log.debug(method)
+
+        self.parameters = json.loads(body)
+
+        VKLogger.log.debug('PARAMETERS UNPACKED: %s' % self.parameters)
+        VKLogger.log.debug("TOKEN: %s" % self.parameters['access_token'])
+
+        self.client = VKClient(token=self.parameters['access_token'], proxy_list=self.proxy_list)
+
+        VKLogger.log.debug('CLIENT INITIALIZED: %s' % self.client)
+
         data = self._fetch_data(param_key='posts', api_method=self.client.wall.getById)
+
+        VKLogger.log.debug("DATA: %s" % data)
+
         posts_statistic = self._get_posts_statistic(data)
+
         for item in posts_statistic:
             with open(self.__class__.__name__, 'a') as f:
                 f.write(str(item))
-        return posts_statistic
+
+        VKLogger.log.debug('CALLBACK END')
 
     def __str__(self):
         return self.__class__.__name__
 
 
 class VKUpdateAuthors(VKScrapper):
-
-    def init_client_update_authors(self):
-        self.parameters = {
-            'user_ids': 'aqustics, katya_fofina, 322615035',
-            'fields': 'photo_id, counters',
-            'access_token': '2d81c89832f2226c7b848eb0306b3a1219096a1faef6ab9969e99bd9bd5b640c2617edb6d2b165ac05533',
-        }
-        self.client = VKClient(token=self.parameters['access_token'], proxy_list=self.proxy_list)
+    scraper_name = 'update.authors'
 
     def run(self):
-        self.init_client_update_authors()
+        self.channel = self.connection.channel(4)
+
+        queue_name = self.init_scraper(self.scraper_name)
+        self.channel.basic_consume(self.callback,
+                                   queue=queue_name,
+                                   no_ack=True)
+        VKLogger.log.debug('BEFORE START LISTENING')
+        self.channel.start_consuming()
+
+    def callback(self, ch, method, properties, body):
+        VKLogger.log.debug('CALLBACK BEGIN')
+        VKLogger.log.debug(method)
+
+        self.parameters = json.loads(body)
+
+        VKLogger.log.debug('PARAMETERS UNPACKED: %s' % self.parameters)
+        VKLogger.log.debug("TOKEN: %s" % self.parameters['access_token'])
+
+        self.client = VKClient(token=self.parameters['access_token'], proxy_list=self.proxy_list)
+
+        VKLogger.log.debug('CLIENT INITIALIZED: %s' % self.client)
+
         data = self._fetch_data(param_key='user_ids', api_method=self.client.users.get)
+
+        VKLogger.log.debug("DATA: %s" % data)
+
         author_statistic = self._get_authors_statistic(data)
+
         for item in author_statistic:
             with open(self.__class__.__name__, 'a') as f:
                 f.write(str(item))
-        return author_statistic
+
+        VKLogger.log.debug('CALLBACK END')
 
     def __str__(self):
         return self.__class__.__name__

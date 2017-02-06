@@ -3,11 +3,10 @@ import argparse
 import signal
 import time
 import settings
-import logging
 
 from multiprocessing import Process
-
 from core.client.exceptions import InitializeException
+from core.client.vk_logger import VKLogger
 
 
 class Manager(object):
@@ -39,11 +38,11 @@ class Manager(object):
             self.scrapers.append(self.modules.pop(0))
 
         if not self.modules or not self.modules[0]:
-            logging.fatal('No one correct module is specified, check the settings.py')
+            VKLogger.log.fatal('No one correct module is specified, check the settings.py')
             raise InitializeException('No one correct module is specified, check the settings.py')
 
-        logging.debug('Modules %s has been initialized' % self.modules)
-        logging.info('Manager initialized')
+        VKLogger.log.debug('Modules %s has been initialized' % self.modules)
+        VKLogger.log.info('Manager initialized')
 
     def _init_worker(self, module_name, scraper_name):
         """
@@ -58,7 +57,7 @@ class Manager(object):
         try:
             instance = settings.CONF[scraper_name]['modules'][module_name](pidfile=pidfile)
         except KeyError as err:
-            logging.warning('The not correct scraper or module are selected: %s' % err)
+            VKLogger.log.warning('The not correct scraper or module are selected: %s' % err)
             return
 
         return instance
@@ -83,7 +82,7 @@ class Manager(object):
             process.start()
             processes.append(process)
 
-            logging.debug('Worker %s have been running' % worker)
+            VKLogger.log.debug('Worker %s have been running' % worker)
 
         for process in processes:
             process.join()
@@ -116,13 +115,13 @@ class Manager(object):
     def execute(self):
 
         if self.action == 'start':
-            logging.info('Workers started')
+            VKLogger.log.info('Workers started')
             self.run_scrapers()
         elif self.action == 'restart':
-            logging.info('Workers restarted')
+            VKLogger.log.info('Workers restarted')
             self.restart_workers()
         elif self.action == 'stop':
-            logging.info('Workers stopped')
+            VKLogger.log.info('Workers stopped')
             self.stop_workers()
 
 
@@ -138,8 +137,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     # logging.basicConfig(filename='/home/bogdan/Projects/vkscraper/log_config')
     # logger = logging.getLogger(__name__)
-    logging.basicConfig(format=u'[%(asctime)s] %(levelname)-4s %(filename)s'
-                               u' [LINE:%(lineno)d] %(funcName)s # %(message)s',
-                        level=logging.DEBUG)
+    # logging.basicConfig(format=u'[%(asctime)s] %(levelname)-4s %(filename)s'
+    #                            u' [LINE:%(lineno)d] %(funcName)s # %(message)s',
+    #                     level=logging.DEBUG)
     runner = Manager(args, daemon=args.daemon)
     runner.execute()
