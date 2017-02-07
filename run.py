@@ -78,7 +78,7 @@ class Manager(object):
             if not worker:
                 continue
 
-            process = Process(target=worker.start if self.daemon else worker.run)
+            process = Process(target=worker.start if self.daemon else worker.run, kwargs={'scraper_name': module})
             process.start()
             processes.append(process)
 
