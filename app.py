@@ -1,6 +1,8 @@
 import json
 
 import gevent
+import signal
+
 from py_daemon.py_daemon import Daemon
 from core.async_utils import AsyncRequests
 from core.client import VKClient
@@ -74,6 +76,12 @@ class VKScrapper(SocialScrapper):
                 continue
 
     def init_scraper(self, scraper_name):
+        """
+        Initializes RabbitMQ channel and returns queue name.
+        :param scraper_name:
+        :return:
+        """
+
         VKLogger.log.debug('START INIT')
         self.channel.exchange_declare(exchange=scraper_name,
                                       type='topic')
@@ -87,9 +95,16 @@ class VKScrapper(SocialScrapper):
         return queue_name
 
     def process_data(self, parameters):
-        raise NotImplementedError("Fuck off bitch, implement me!")
+        """
+        Must be implemented in each scraper for data processing.
+        """
+        raise NotImplementedError("Process data for this scraper not implemented.")
 
     def callback(self, ch, method, properties, body):
+        """
+        RabbitMQ callback. Initializes VKClient and call process data.
+        """
+
         VKLogger.log.debug('CALLBACK BEGIN')
         self.parameters = json.loads(body)
 
@@ -103,13 +118,22 @@ class VKScrapper(SocialScrapper):
         VKLogger.log.debug('CALLBACK END')
 
     def run(self, **kwargs):
+        """
+        Receives the scraper name and starts the listening rabbitmq queue.
+        :param kwargs: Includes scraper name.
+        """
         self.channel = self.connection.channel()
         queue_name = self.init_scraper(kwargs['scraper_name'])
         self.channel.basic_consume(self.callback,
                                    queue=queue_name,
                                    no_ack=True)
+
         VKLogger.log.debug('START LISTENING')
+        signal.signal(signal.SIGUSR1, self.stop_signal_handler)
         self.channel.start_consuming()
+
+    def stop_signal_handler(self, *args, **kwargs):
+        self.stop()
 
 
 class VKFromQuery(VKScrapper):
@@ -169,7 +193,7 @@ class VKUpdateAuthors(VKScrapper):
         author_statistic = self._get_authors_statistic(data)
 
         for item in author_statistic:
-            with open(self.__class__.__name__, 'a') as f:
+             with open(self.__class__.__name__, 'a') as f:
                 f.write(str(item))
 
     def __str__(self):

@@ -7,14 +7,23 @@ from core.client.exceptions import RequestException
 
 
 class DoRequest(object):
+
     def __init__(self, client, chain):
         self.client = client
         self._chain = chain
 
     def __getattr__(self, item):
+        """
+        :return: Calling self with two parts VK methods.
+        """
+
         return type(self)(self.client, self._chain + '.' + item)
 
     def __call__(self, *args, **kwargs):
+        """
+        Sends request with api method.
+        """
+
         return self.client._request.send(api_method=self._chain, *args, **kwargs)
 
 
@@ -39,6 +48,18 @@ class ClientRequest(object):
         return session
 
     def send(self, api_method, http_method='get', retries=5, timeout=10, allow_redirects=True, proxy=None, **kwargs):
+        """
+        Sends request to VK API and, processing API
+        response and returns reformatted response.
+        :param api_method: VK API method like 'wall.search'
+        :param http_method: GET or POST
+        :param retries:
+        :param timeout:
+        :param allow_redirects:
+        :param proxy: List with proxy IPs
+        :param kwargs:
+        :return:
+        """
 
         if 'v' not in kwargs:
             kwargs['v'] = self.version
@@ -82,6 +103,12 @@ class ClientRequest(object):
         return reformat(data_dict)
 
     def _get_proxy(self, proxy=None):
+        """
+        Getting proxy list
+        :param proxy:
+        :return: random proxy IP
+        """
+
         if proxy:
             return proxy
         elif self._proxy_list:

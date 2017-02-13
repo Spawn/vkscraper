@@ -2,9 +2,6 @@ from core.client.request import ClientRequest, DoRequest
 
 
 class VKClient(object):
-    """
-    It allows to scrape data from VK API
-    """
 
     version = '5.62'
 
@@ -57,6 +54,15 @@ class VKClient(object):
         return DoRequest(self, item)
 
     def pagination(self, methods, start_time=None, end_time=None, limit=None, count=100, **kwargs):
+        """
+        Allows to get paginated data.
+        :param methods: VK API methods
+        :param start_time: The time at which to begin scrape
+        :param end_time:
+        :param limit: Page limit
+        :param count: Results in one page
+        """
+
         start_item = kwargs.get('start_page', '1')
         iteration = 0
         while True:

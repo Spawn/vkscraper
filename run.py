@@ -91,38 +91,57 @@ class Manager(object):
         """
         Runs the workers of the each scraper.
         """
+
         for scraper in self.scrapers:
             self.start_worker(scraper)
 
-    def restart_workers(self):
-        pass
+    def stop_scrapers(self):
+        """
+        Stops workers of the each scraper via pidfile
+        """
 
-    def stop_workers(self):
-        for method in self.api_methods:
+        def stop_worker(pid_file):
+            try:
+                with open(pid_file, 'r') as f:
+                    pid = int(f.read().strip())
 
-            with open(os.path.join(self.pids_dir, method), 'r') as f:
-                pid = int(f.read().strip())
-                i = 0
+                    i = 0
+                    try:
+                        while True:
+                            os.kill(pid, signal.SIGTERM)
+                            time.sleep(0.1)
+                            i += 1
 
-                while True:
-                    os.kill(pid, signal.SIGTERM)
-                    time.sleep(0.1)
-                    i += 1
+                            if i == 10:
+                                os.kill(pid, signal.SIGHUP)
+                    except OSError:
+                        VKLogger.log.info('Worker with pid %s stopped' % pid)
+                        os.remove(pid_file)
+            except ValueError:
+                print 'Invalid pidfile'
 
-                    if i == 10:
-                        os.kill(pid, signal.SIGHUP)
+        if self.api_methods == '*:*':
+            for filename in os.listdir(self.pids_dir):
+                stop_worker('{}/{}'.format(self.pids_dir, filename))
+        else:
+            for method in self.api_methods.split(':')[1:]:
+                try:
+                    stop_worker(os.path.join(self.pids_dir, method))
+                except IOError:
+                    VKLogger.log.warning('Pidfile for worker %s does not exist' % method)
 
     def execute(self):
 
         if self.action == 'start':
-            VKLogger.log.info('Workers started')
             self.run_scrapers()
+            VKLogger.log.info('Workers started')
         elif self.action == 'restart':
+            self.stop_scrapers()
+            self.run_scrapers()
             VKLogger.log.info('Workers restarted')
-            self.restart_workers()
         elif self.action == 'stop':
+            self.stop_scrapers()
             VKLogger.log.info('Workers stopped')
-            self.stop_workers()
 
 
 if __name__ == '__main__':
@@ -131,14 +150,9 @@ if __name__ == '__main__':
     parser.add_argument('action', help='For workers manage. Allows start|restart|stop')
     parser.add_argument('api_methods', help='Required the scraper name and it method(s). '
                                             'Example: vk:from.query:from.page. '
-                                            'Command *:* runs all scrapers and workers.')
+                                            'Command *:* selects all scrapers and workers.')
     parser.add_argument('daemon', default=True, help='Flag to running workers as daemons. '
                                                      'Default: True', )
     args = parser.parse_args()
-    # logging.basicConfig(filename='/home/bogdan/Projects/vkscraper/log_config')
-    # logger = logging.getLogger(__name__)
-    # logging.basicConfig(format=u'[%(asctime)s] %(levelname)-4s %(filename)s'
-    #                            u' [LINE:%(lineno)d] %(funcName)s # %(message)s',
-    #                     level=logging.DEBUG)
     runner = Manager(args, daemon=args.daemon)
     runner.execute()
