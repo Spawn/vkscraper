@@ -1,7 +1,7 @@
 import logging.config
 import os
 
-LOG_CONFIG = '/home/bogdan/Projects/vkscraper/log_config'
+LOG_CONFIG = '/code/log_config'
 LOG_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'logs'))
 
 

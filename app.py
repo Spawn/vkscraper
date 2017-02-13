@@ -24,7 +24,7 @@ class VKScrapper(SocialScrapper):
     def __init__(self, pidfile=None, proxy_list=None):
         super(VKScrapper, self).__init__(pidfile)
         self.connection = pika.BlockingConnection(pika.ConnectionParameters(
-            host='localhost', channel_max=20))
+            host='rabbitmq', port=5672, channel_max=20))
         self.proxy_list = proxy_list if proxy_list else default_proxy_list
         self.parameters = dict()
         self.client = None

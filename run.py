@@ -151,8 +151,8 @@ if __name__ == '__main__':
     parser.add_argument('api_methods', help='Required the scraper name and it method(s). '
                                             'Example: vk:from.query:from.page. '
                                             'Command *:* selects all scrapers and workers.')
-    parser.add_argument('daemon', default=True, help='Flag to running workers as daemons. '
-                                                     'Default: True', )
+    parser.add_argument('--daemon', default=True, help='Flag to running workers as daemons. '
+                                                       'Default: True', )
     args = parser.parse_args()
     runner = Manager(args, daemon=args.daemon)
     runner.execute()

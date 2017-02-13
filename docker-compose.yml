@@ -1,0 +1,14 @@
+version: '2'
+services:
+  rabbitmq:
+    image: rabbitmq:latest
+    ports:
+      - "15672:15672"
+  vkscraper:
+    build: .
+    command: sh start.sh
+    volumes:
+      - ./runtime:/tmp:Z
+      - ./runtime:/code/runtime:Z
+    links:
+      - rabbitmq
