@@ -2,6 +2,7 @@ import json
 
 import gevent
 import signal
+import pika
 
 from py_daemon.py_daemon import Daemon
 from core.async_utils import AsyncRequests
@@ -9,7 +10,6 @@ from core.client import VKClient
 from core.client.vk_logger import VKLogger
 from core.data_formatter import FormatAuthor, FormatPost
 from proxies import DEFAULT_PROXY_LIST as default_proxy_list
-import pika
 
 
 class SocialScrapper(Daemon):

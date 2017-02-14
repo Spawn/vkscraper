@@ -2,6 +2,9 @@ import os
 import argparse
 import signal
 import time
+
+import sys
+
 import settings
 
 from multiprocessing import Process
@@ -154,5 +157,12 @@ if __name__ == '__main__':
     parser.add_argument('--daemon', default=True, help='Flag to running workers as daemons. '
                                                        'Default: True', )
     args = parser.parse_args()
+    if args.daemon == 'True':
+        args.daemon = True
+    elif args.daemon == 'False':
+        args.daemon = False
+    else:
+        print 'Use --daemon True or --daemon False'
+        sys.exit(1)
     runner = Manager(args, daemon=args.daemon)
     runner.execute()
