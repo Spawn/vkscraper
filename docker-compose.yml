@@ -3,7 +3,7 @@ services:
   rabbitmq:
     image: rabbitmq:latest
     ports:
-      - "15672:15672"
+      - "15672:5672"
   vkscraper:
     build: .
     command: sh start.sh

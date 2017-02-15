@@ -4,7 +4,7 @@ import pika
 import sys
 
 connection = pika.BlockingConnection(pika.ConnectionParameters(
-        host='localhost'))
+        host='localhost', port=15672))
 channel = connection.channel()
 
 channel.exchange_declare(exchange='from.query',
