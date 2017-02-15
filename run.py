@@ -1,13 +1,11 @@
-import os
 import argparse
+import os
 import signal
-import time
-
 import sys
-
-import settings
-
+import time
 from multiprocessing import Process
+
+from core import settings, get_module
 from core.client.exceptions import InitializeException
 from core.client.vk_logger import VKLogger
 
@@ -58,7 +56,7 @@ class Manager(object):
 
         pidfile = os.path.join(self.pids_dir, module_name)
         try:
-            instance = settings.CONF[scraper_name]['modules'][module_name](pidfile=pidfile)
+            instance = get_module(settings.CONF[scraper_name]['modules'][module_name])(pidfile=pidfile)
         except KeyError as err:
             VKLogger.log.warning('The not correct scraper or module are selected: %s' % err)
             return

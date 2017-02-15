@@ -1,8 +1,6 @@
 import logging.config
 import os
-
-LOG_CONFIG = '/code/log_config'
-LOG_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'logs'))
+from core.settings import LOG_CONFIG, LOG_DIR
 
 
 def singleton(cls):

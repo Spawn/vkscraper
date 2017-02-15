@@ -7,9 +7,10 @@ import pika
 from py_daemon.py_daemon import Daemon
 from core.async_utils import AsyncRequests
 from core.client import VKClient
-from core.client.vk_logger import VKLogger
 from core.data_formatter import FormatAuthor, FormatPost
 from proxies import DEFAULT_PROXY_LIST as default_proxy_list
+from core.settings import RABBITMQ_CONF
+from core.client.vk_logger import VKLogger
 
 
 class SocialScrapper(Daemon):
@@ -24,7 +25,7 @@ class VKScrapper(SocialScrapper):
     def __init__(self, pidfile=None, proxy_list=None):
         super(VKScrapper, self).__init__(pidfile)
         self.connection = pika.BlockingConnection(pika.ConnectionParameters(
-            host='rabbitmq', port=5672, channel_max=20))
+            host=RABBITMQ_CONF['host'], port=RABBITMQ_CONF['port'], channel_max=20))
         self.proxy_list = proxy_list if proxy_list else default_proxy_list
         self.parameters = dict()
         self.client = None
