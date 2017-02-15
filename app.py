@@ -58,8 +58,7 @@ class VKScrapper(SocialScrapper):
             if post and post.get('owner_id') not in unique_authors:
                 unique_authors.append(str(post.get('owner_id')))
 
-        client = VKClient()
-        authors = client.users.get(user_ids=','.join(unique_authors))
+        authors = self.client.users.get(user_ids=','.join(unique_authors))
         for author in authors['items']:
             yield format_author.as_dict(author)
 
