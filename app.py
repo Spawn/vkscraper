@@ -1,7 +1,6 @@
 import json
 
 import gevent
-import signal
 import pika
 
 from py_daemon.py_daemon import Daemon
@@ -13,11 +12,11 @@ from core.settings import RABBITMQ_CONF
 from core.client.vk_logger import VKLogger
 
 
-class SocialScrapper(Daemon):
+class SocialScraper(Daemon):
     pass
 
 
-class VKScrapper(SocialScrapper):
+class VKScrapper(SocialScraper):
     """
     It allows to scrape data from VK
     """
@@ -129,11 +128,7 @@ class VKScrapper(SocialScrapper):
                                    no_ack=True)
 
         VKLogger.log.debug('START LISTENING')
-        signal.signal(signal.SIGUSR1, self.stop_signal_handler)
         self.channel.start_consuming()
-
-    def stop_signal_handler(self, *args, **kwargs):
-        self.stop()
 
 
 class VKFromQuery(VKScrapper):
@@ -193,7 +188,7 @@ class VKUpdateAuthors(VKScrapper):
         author_statistic = self._get_authors_statistic(data)
 
         for item in author_statistic:
-             with open(self.__class__.__name__, 'a') as f:
+            with open(self.__class__.__name__, 'a') as f:
                 f.write(str(item))
 
     def __str__(self):

@@ -102,15 +102,15 @@ class ClientRequest(object):
 
         return reformat(data_dict)
 
-    def _get_proxy(self, proxy=None):
+    def _get_proxy(self, proxies=None):
         """
         Getting proxy list
         :param proxy:
         :return: random proxy IP
         """
 
-        if proxy:
-            return proxy
+        if proxies:
+            return proxies
         elif self._proxy_list:
             return random.choice(self._proxy_list)
 
